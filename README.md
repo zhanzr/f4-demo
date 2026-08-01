@@ -6,7 +6,7 @@ Bare-metal projects for a custom **STM32F407VET6** board, built with
 `printf()` streamed out **USART3 (PD8/PD9)** at 115200 baud to the on-board
 RS232/RS485 transceivers. Read it with any USB-serial adapter.
 
-![Custom STM32F407VET6 board — top view](board_0.webp)
+![Custom STM32F407VET6 board — top view](board_0.jpg)
 ![Custom STM32F407VET6 board — wiring](board_1.webp)
 
 Schematic / board manual: `STM32F407VET6核心板+以太网扩展.pdf`.
@@ -214,33 +214,5 @@ TPIU clock = HCLK = **168 MHz**, SWO baud **2 Mbaud** (prescaler 84).
 The ULINK2 in CMSIS-DAP mode reports "Requested SWO mode is not available on
 this probe", so use an ST-Link/J-Link/DAPLink if you need SWV.
 
-## Layout
-
-```
-stm32f407_manual_prj/
-├── board_0.webp, board_1.webp   board photos
-├── STM32F407VET6核心板+以太网扩展.pdf  schematic / board manual
-├── cmake/                     shared CMake helpers
-│   ├── arm-none-eabi-toolchain.cmake   GNU toolchain (blink / -DSTM32_TOOLCHAIN=gcc)
-│   ├── armclang-keil-toolchain.cmake   armclang C + GNU as/ld (default for benchmarks)
-│   ├── armclang-postproject.cmake      restores GNU link rule after project()
-│   ├── armclang_force_wint_t.h         wint_t shim for newlib under armclang
-│   ├── printf_rename.h                 printf -> bench_printf shim (see above)
-│   ├── stm32f407_board.cmake  HAL+board sources/flags for a target (incl. GCC LTO + -fno-lto syscalls)
-│   ├── flash-targets.cmake    flash / flash-ocd / swv targets
-│   └── openocd_stm32f407ve.cfg
-├── board/                     shared STM32F407VET6 board support
-│   ├── board.c/h              168 MHz clock, LEDs, Error_Handler
-│   ├── uart_printf.c/h        USART3 (PD8/PD9) printf, 115200 8-N-1 + bench_printf (armclang)
-│   ├── swv_printf.c/h         ITM/SWO printf (optional, non-blocking)
-│   ├── stm32f4xx_hal_conf.h   HAL module config (HSE = 25 MHz)
-│   ├── stm32f4xx_hal_msp.c    HAL_MspInit
-│   ├── stm32f4xx_it.c         SysTick_Handler -> HAL_IncTick
-│   ├── syscalls.c             newlib stubs (_write -> UART, _sbrk, ...)
-│   ├── startup_stm32f407xx.s  ST startup (from the HAL repo)
-│   ├── system_stm32f4xx.c     ST system init (from the HAL repo)
-│   └── stm32f407vet6.ld       512K flash / 128K RAM linker script
-├── blink/                     LED blink + UART demo (GCC)
-├── dhry_168m/                 Dhrystone 2.1 + README.md + LTO_on_dhrystone.md (why LTO is invalid)
-└── coremark_168m/             CoreMark 1.0.1 (coremark_1_0_1/) + README.md (results)
-```
+Generate an up-to-date layout with `tree` / `ls -R` — the folder structure
+changes often and is not documented here to keep this file stable.

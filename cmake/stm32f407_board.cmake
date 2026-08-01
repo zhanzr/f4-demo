@@ -82,6 +82,13 @@ function(stm32f407_apply_board TGT OPT)
         LINK_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 ${OPT} -Wl,--gc-sections -nostartfiles -Wl,-Map=${PROJECT_NAME}.map -T ${BOARD_DIR}/stm32f407vet6.ld -lc -lm"
     )
 
+    # newlib/libgcc's thumb/v7e-m+fp/hard multilib objects are built with
+    # -fshort-enums and lack .note.GNU-stack, so a normal link spews ~60
+    # benign warnings. Silence them (the sizes match the ARM EABI defaults
+    # our objects use, so this is noise, not an ABI error):
+    set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+        LINK_FLAGS " -Wl,--no-enum-size-warning -Wl,--no-wchar-size-warning -Wl,--no-warn-execstack")
+
     # Link-time optimization (GCC only). armclang -flto emits LLVM bitcode
     # (.llvm.lto) that GNU ld cannot consume, so STM32_LTO is ignored there.
     if(STM32_LTO AND NOT STM32_ARMCLANG)
