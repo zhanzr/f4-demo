@@ -1,21 +1,19 @@
-# Dhrystone 2.1 @ 168 MHz — dev1 (STM32F407VET6)
+# Dhrystone 2.1 @ 168 MHz — nano (STM32F407VET6)
 
 Classic Dhrystone 2.1 (dhry_1.c / dhry_2.c / dhry.h), **2,000,000 runs**, on
-the **dev1** board (custom STM32F407VET6) clocked at **168 MHz** (HSE 25 MHz,
-PLL M=25 N=336 P=2 → SYSCLK). Compiler-agnostic: the same sources build with
+the **nano** board (STM32F407VET6) clocked at **168 MHz** (HSE 8 MHz,
+PLL M=8 N=336 P=2 → SYSCLK). Compiler-agnostic: the same sources build with
 either **GNU arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)**,
 selected at configure time.
 
-## Results (measured on hardware, 168 MHz, hard-float)
+## Results (measured on hardware, 168 MHz, hard-float, GCC)
 
-Normal toolchain comparison (no LTO):
+| Toolchain    | Flags                                    | Dhrystones/s | DMIPS/MHz |
+| ------------ | ---------------------------------------- | ------------ | --------- |
+| GCC 15.3.1   | `-Ofast -ffp-contract=fast -funroll-loops` | 355,082     | 1.203     |
 
-| Toolchain                | Flags                                    | Dhrystones/s | DMIPS/MHz |
-| ------------------------ | ---------------------------------------- | ------------ | --------- |
-| GCC 15.3.1               | `-Ofast -ffp-contract=fast -funroll-loops` | 351,370     | 1.190     |
-| armclang 6.24 (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | 393,391     | 1.333     |
-
-All builds print correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
+Two consecutive runs: 355,114 / 355,051 Dhrystones/s (2.816 / 2.817 µs per run).
+All runs print correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
 
 > ⚠ **Do not use LTO for Dhrystone.** GCC `-flto` sees the whole program and
 > hoists the loop-invariant work out of the timed loop, inflating the score
@@ -23,26 +21,23 @@ All builds print correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
 > The LTO number is meaningless and is **excluded from the comparison above**.
 > Full explanation and reproduction: **`LTO_on_dhrystone.md`** in this folder.
 
-armclang is ~12 % faster than plain GCC here, but see the toolchain note in
-the board-level `../../README.md`: **Arm Compiler for Embedded 6.24 is the
-final feature release** (defect fixes only), and the whole armclang/GNU-ld/newlib
-mixing needed two shims (`../../cmake/printf_rename.h`,
-`../../cmake/armclang_force_wint_t.h`).
-For new work prefer the open LLVM Embedded Toolchain or GNU gcc.
+The toolchain choice is discussed in the board-level `../../README.md`: **Arm
+Compiler for Embedded 6.24 is the final feature release** (defect fixes only),
+so GCC is recommended for production work.
 
 ## Build
 
 Requires the CMake/Ninja environment from the board-level `../../README.md`.
 
 ```bash
-# armclang (default)
+# GNU gcc (default)
 mkdir -p build && cd build
 cmake -G Ninja ..
 ninja
-ninja flash          # programs the board via probe-rs / ULINK2 (SWD)
+ninja flash          # programs the board via probe-rs / ST-Link (SWD)
 
-# GNU gcc (same build dir works for armclang too)
-cmake -G Ninja -DSTM32_TOOLCHAIN=gcc ..
+# armclang (optional)
+cmake -G Ninja -DSTM32_TOOLCHAIN=armclang ..
 ninja
 
 # GNU gcc + LTO (kept only as reproducible evidence of the artifact — see LTO_on_dhrystone.md)

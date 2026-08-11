@@ -60,7 +60,7 @@ Iterations/Sec   = 451.007530
 Iterations/Sec   = 451.007530
 ```
 
-The serial console and the capture recipe are in the board-level
-`../../README.md` (USART3, PD8 TX / PD9 RX, 115200 8-N-1). Reading 30–45 s of
-console while `probe-rs reset` restarts the benchmark, then averaging the
-`Iterations/Sec` lines, is what the numbers above came from.
+The serial console and the capture recipe are described in the board-level
+`../../README.md`. Reading 30–45 s of console while `probe-rs reset` restarts
+the benchmark, then averaging the `Iterations/Sec` lines, is what the numbers
+above came from.

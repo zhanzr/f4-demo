@@ -10,20 +10,25 @@ live in each board folder's README.
 
 | Board            | What it is                                          |
 | ---------------- | --------------------------------------------------- |
-| `dev1/`          | Custom STM32F407VET6 @ 168 MHz (see its README)     |
+| `dev1/`          | Custom STM32F407VET6 @ 168 MHz, 25 MHz HSE, 3 LEDs, USART3 console (see its README) |
+| `nano/`          | STM32F407VET6 @ 168 MHz, 8 MHz HSE, 1 LED (PB0), USART1 → ST-Link VCP console (see its README) |
 
 `dev1/` contains the blink demo and the Dhrystone / CoreMark benchmark
 projects (GCC **or** Keil AC6 armclang toolchain, `-DSTM32_TOOLCHAIN=gcc|armclang`
-at configure time).
+at configure time). `nano/` has a `blink_hello` demo that also samples the
+ADC1 internal channels (temperature / VREFINT / VBAT), plus the same two
+benchmarks.
 
 ## Repo map
 
 | Path          | What it is                                       |
 | ------------- | ------------------------------------------------ |
 | `dev1/`       | Board + all its projects (see `dev1/README.md`)  |
+| `nano/`       | Board + all its projects (see `nano/README.md`)  |
 | `dev1/app/`   | Applications (blink, Dhrystone, CoreMark)        |
-| `dev1/board/` | Shared board layer (clock, UART, startup, linker) |
-| `dev1/cmake/` | Toolchain + board + flash-target helpers         |
+| `nano/app/`   | Applications (blink_hello + ADC, Dhrystone, CoreMark) |
+| `*/board/`    | Per-board shared layer (clock, UART, startup, linker) |
+| `*/cmake/`    | Per-board toolchain + board + flash-target helpers |
 
 ## Toolchain / environment
 
