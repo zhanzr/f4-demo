@@ -12,7 +12,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 if(NOT CMAKE_TOOLCHAIN_FILE)
-    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/arm-none-eabi-toolchain.cmake")
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/arm-none-eabi-toolchain.cmake")
 endif()
 
 project(blink C ASM)
@@ -24,7 +24,7 @@ add_executable(${PROJECT_NAME}.elf
     src/main.c
 )
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/stm32f407_board.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f407_board.cmake)
 stm32f407_apply_board(${PROJECT_NAME}.elf "-O1")
 
 # Generate .hex/.bin and copy them next to the sources (where the flasher looks).
@@ -37,4 +37,4 @@ add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "objcopy -> .hex/.bin, size")
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/flash-targets.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/flash-targets.cmake)

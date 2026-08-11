@@ -4,7 +4,7 @@
 # driver sources are attached to a target with stm32f407_apply_board().
 #
 # Usage (from a project CMakeLists.txt, after add_executable()):
-#   include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/stm32f407_board.cmake)
+#   include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f407_board.cmake)
 #   stm32f407_apply_board(${PROJECT_NAME}.elf "-Ofast")
 #
 # Requires the project to enable ASM (project(X C ASM)).
@@ -13,7 +13,7 @@ set(STM32F4_HAL_ROOT
     "C:/Users/user1/STM32Cube/Repository/STM32Cube_FW_F4_V1.28.3" CACHE PATH
     "Root of the STM32Cube_FW_F4 HAL library (contains Drivers/)")
 
-set(BOARD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../board)
+set(BOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/../board)
 set(STM32F4_HAL_INC ${STM32F4_HAL_ROOT}/Drivers/STM32F4xx_HAL_Driver/Inc)
 set(STM32F4_HAL_SRC ${STM32F4_HAL_ROOT}/Drivers/STM32F4xx_HAL_Driver/Src)
 set(STM32F4_CMSIS_DEV ${STM32F4_HAL_ROOT}/Drivers/CMSIS/Device/ST/STM32F4xx/Include)

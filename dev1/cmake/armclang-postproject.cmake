@@ -7,7 +7,7 @@
 # We link with the GNU gcc driver + our .ld script, so restore the GNU-style
 # link rule and clear the suffix. Include this file after project().
 #
-#   include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/armclang-postproject.cmake)
+#   include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/armclang-postproject.cmake)
 
 set(CMAKE_EXECUTABLE_SUFFIX "")
 

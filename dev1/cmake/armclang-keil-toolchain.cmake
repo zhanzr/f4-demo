@@ -8,10 +8,10 @@
 #
 # Selection (project CMakeLists):
 #   if(NOT CMAKE_TOOLCHAIN_FILE)
-#       set(CMAKE_TOOLCHAIN_FILE "../cmake/armclang-keil-toolchain.cmake")
+#       set(CMAKE_TOOLCHAIN_FILE "../../cmake/armclang-keil-toolchain.cmake")
 #   endif()
 # or from the command line:
-#   cmake -G Ninja -DCMAKE_TOOLCHAIN_FILE=../cmake/armclang-keil-toolchain.cmake ..
+#   cmake -G Ninja -DCMAKE_TOOLCHAIN_FILE=../../cmake/armclang-keil-toolchain.cmake ..
 #
 # Variables:
 #   ARMCLANG_ROOT : Keil MDK ARMCLANG dir (contains bin/armclang.exe)
@@ -23,7 +23,9 @@ set(CMAKE_SYSTEM_PROCESSOR cortex-m4)
 # CMake 3.30's ARMClang support wants the cpu/arch flags handled explicitly;
 # we pass them ourselves (-mcpu=...) and link with GNU ld, so suppress the
 # auto-added --cpu/--march flags.
-cmake_policy(SET CMP0123 NEW)
+if(POLICY CMP0123)
+    cmake_policy(SET CMP0123 NEW)
+endif()
 
 set(ARMCLANG_ROOT "D:/Keil_v5/ARM/ARMCLANG" CACHE PATH
     "Keil Arm Compiler 6 root (contains bin/armclang.exe)")

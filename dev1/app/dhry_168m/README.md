@@ -1,10 +1,10 @@
-# Dhrystone 2.1 @ 168 MHz — STM32F407VET6 (custom board)
+# Dhrystone 2.1 @ 168 MHz — dev1 (STM32F407VET6)
 
 Classic Dhrystone 2.1 (dhry_1.c / dhry_2.c / dhry.h), **2,000,000 runs**, on
-the custom STM32F407VET6 board clocked at **168 MHz** (HSE 25 MHz, PLL M=25
-N=336 P=2 → SYSCLK). Compiler-agnostic: the same sources build with either
-**GNU arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)**, selected at
-configure time.
+the **dev1** board (custom STM32F407VET6) clocked at **168 MHz** (HSE 25 MHz,
+PLL M=25 N=336 P=2 → SYSCLK). Compiler-agnostic: the same sources build with
+either **GNU arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)**,
+selected at configure time.
 
 ## Results (measured on hardware, 168 MHz, hard-float)
 
@@ -24,14 +24,15 @@ All builds print correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
 > Full explanation and reproduction: **`LTO_on_dhrystone.md`** in this folder.
 
 armclang is ~12 % faster than plain GCC here, but see the toolchain note in
-the top-level `README.md`: **Arm Compiler for Embedded 6.24 is the final
-feature release** (defect fixes only), and the whole armclang/GNU-ld/newlib
-mixing needed two shims (`cmake/printf_rename.h`, `cmake/armclang_force_wint_t.h`).
+the board-level `../../README.md`: **Arm Compiler for Embedded 6.24 is the
+final feature release** (defect fixes only), and the whole armclang/GNU-ld/newlib
+mixing needed two shims (`../../cmake/printf_rename.h`,
+`../../cmake/armclang_force_wint_t.h`).
 For new work prefer the open LLVM Embedded Toolchain or GNU gcc.
 
 ## Build
 
-Requires the CMake/Ninja environment from the top-level `README.md`.
+Requires the CMake/Ninja environment from the board-level `../../README.md`.
 
 ```bash
 # armclang (default)
@@ -57,12 +58,12 @@ Use a separate build dir per toolchain (`build/`, `build-gcc/`,
 Keil's armclang runs in ARMCLIB "standardlib" mode and specializes calls to
 the *name* `printf` into the ARMCLIB ABI (`__2printf` + hidden `_printf_*`
 helpers). Those symbols only exist in ARMCLIB, so linking against GNU
-newlib with GNU ld fails. `cmake/printf_rename.h` renames `printf` →
-`bench_printf` (a `vprintf` wrapper in `board/uart_printf.c`); armclang does
-not specialize `vprintf`, so all console output still reaches the UART.
+newlib with GNU ld fails. `../../cmake/printf_rename.h` renames `printf` →
+`bench_printf` (a `vprintf` wrapper in `../../board/uart_printf.c`); armclang
+does not specialize `vprintf`, so all console output still reaches the UART.
 
 ## Console
 
 Results are printed over **USART3 (PD8 TX / PD9 RX, 115200 8-N-1)** to the
 on-board RS232/485 transceiver. Read with any USB-serial adapter
-(example capture script in the top-level `README.md`).
+(example capture script in the board-level `../../README.md`).

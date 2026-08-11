@@ -31,9 +31,9 @@ option(STM32_LTO "Enable -flto with the GCC toolchain" OFF)
 
 if(NOT CMAKE_TOOLCHAIN_FILE)
     if(STM32_TOOLCHAIN STREQUAL "gcc")
-        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/arm-none-eabi-toolchain.cmake")
+        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/arm-none-eabi-toolchain.cmake")
     else()
-        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/armclang-keil-toolchain.cmake")
+        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/armclang-keil-toolchain.cmake")
     endif()
 endif()
 
@@ -42,7 +42,7 @@ project(dhry_168m C ASM)
 # armclang only: restore the GNU-style link rule after project() (CMake's
 # ARMClang module installs an armlink-style rule that GNU ld cannot use).
 if(STM32_TOOLCHAIN STREQUAL "armclang")
-    include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/armclang-postproject.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/armclang-postproject.cmake)
 endif()
 
 set(CMAKE_C_STANDARD 11)
@@ -55,7 +55,7 @@ add_executable(${PROJECT_NAME}.elf
     src/dhry_2.c
 )
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/stm32f407_board.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f407_board.cmake)
 stm32f407_apply_board(${PROJECT_NAME}.elf "-Ofast -ffp-contract=fast -funroll-loops")
 
 # Generate .hex/.bin and copy them next to the sources (where the flasher looks).
@@ -68,4 +68,4 @@ add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "objcopy -> .hex/.bin, size")
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/flash-targets.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/flash-targets.cmake)

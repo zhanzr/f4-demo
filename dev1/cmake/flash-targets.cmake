@@ -25,7 +25,7 @@ find_program(OPENOCD NAMES openocd openocd.exe
     DOC "OpenOCD binary")
 
 set(BIN_HEX "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.hex")
-set(OPENOCD_CFG "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/openocd_stm32f407ve.cfg")
+set(OPENOCD_CFG "${CMAKE_CURRENT_LIST_DIR}/openocd_stm32f407ve.cfg")
 
 # --- probe-rs ----------------------------------------------------------------
 if(PROBE_RS)

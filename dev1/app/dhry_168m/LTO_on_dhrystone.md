@@ -112,5 +112,6 @@ ninja -C build-gcc;    ninja -C build-gcc-lto     # then flash + capture console
 ```
 
 (GCC-LTO linking required `board/syscalls.c` to be compiled with `-fno-lto`,
-see `cmake/stm32f407_board.cmake`.) Capture the console per the top-level
-`README.md` and compare `Microseconds for one run` / `Dhrystones per Second`.
+see `../../cmake/stm32f407_board.cmake`.) Capture the console per the
+board-level `../../README.md` and compare `Microseconds for one run` /
+`Dhrystones per Second`.
