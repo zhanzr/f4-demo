@@ -4,7 +4,7 @@
   *
   * LEDs (all low-active, LOW = ON):
   *   LED_R - PH10, LED_G - PH11, LED_B - PH12, LED_1 - PD12
-  * Console: USART1 PA9 (TX) / PA10 (RX), 115200 8-N-1 -> CMSIS-DAP VCP.
+  * Console: USART1 PA9 (TX) / PA10 (RX), 115200 8-N-1 -> USB-serial VCP.
   */
 
 #ifndef __BOARD_H__

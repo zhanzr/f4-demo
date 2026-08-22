@@ -3,7 +3,7 @@
   * @brief   USART1 printf implementation for the fire-f429 board (STM32F429IGT6).
   *
   * USART1 is on APB2 (90 MHz with the 180 MHz clock tree) and is wired to the
-  * CMSIS-DAP virtual COM port via PA9 (TX) and PA10 (RX), AF7.
+  * USB-serial virtual COM port via PA9 (TX) and PA10 (RX), AF7.
   * Output is 115200 8-N-1, blocking (polled) so nothing is dropped.
   */
 

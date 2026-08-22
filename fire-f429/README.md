@@ -1,12 +1,12 @@
 # fire-f429 — STM32F429IGT6 development projects
 
 Bare-metal projects for the **fire-f429** board (STM32F429IGT6, F42x/F43x
-family), built with **CMake/Ninja** (Pico-style), debugged/flashed through the
-on-board **Fire CMSIS-DAP** over **SWD**, with `printf()` streamed out
-**USART1 (PA9/PA10)** at 115200 baud — the CMSIS-DAP's **virtual COM port
-(VCP)** is the console.
+family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
+**SWD** with a **Keil ULINK2** (CMSIS-DAP), with `printf()` streamed out
+**USART1 (PA9/PA10)** at 115200 baud via a USB-serial virtual COM port.
 
 ![fire-f429 board](board_images/board_0.jpg)
+![fire-f429 board v1](board_images/board_v1.jpg)
 
 ## Board facts
 
@@ -20,11 +20,8 @@ on-board **Fire CMSIS-DAP** over **SWD**, with `printf()` streamed out
   - **LED_G** — PH11
   - **LED_B** — PH12
   - **LED_1** — PD12
-- Console: **USART1** on **PA9 (TX) / PA10 (RX)**, AF7, **115200 8-N-1** → CMSIS-DAP VCP
-- Debug: **Keil ULINK2** (CMSIS-DAP, `--probe c251:2722:V0010M9E`, SWD)
-  - The on-board **Fire CMSIS-DAP** (`c251:f001`) does *not* deliver SWD responses
-    on this Windows host (interrupt-IN pipe never returns data; only the VCP
-    works), so the ULINK2 is used for flashing/reset instead.
+- Console: **USART1** on **PA9 (TX) / PA10 (RX)**, AF7, **115200 8-N-1**
+- Debug: **Keil ULINK2** (CMSIS-DAP, SWD) — probe selector `c251:2722:V0010M9E`
 
 > ⚠ **DVI interface / RGB LEDs:** the board also carries a DVI interface. When
 > the **DVI interface is used**, `LED_R`/`LED_G`/`LED_B` (PH10/PH11/PH12) must
@@ -52,14 +49,24 @@ HSE 25 MHz → PLL (M=25, N=360, P=2, Q=7) → SYSCLK 180 MHz
 
 ```bash
 cd bare/blink_hello && bash build.sh        # or: mkdir build && cd build && cmake -G Ninja .. && ninja
-ninja flash                                 # probe-rs download + reset over Keil ULINK2 SWD
+ninja flash                                 # OpenOCD (default; ~3 s, verify+reset)
+ninja flash-probe                           # probe-rs (~11 s)
+ninja flash-pyocd                           # pyOCD (~9 s)
 ```
 
-Read the console on the **CMSIS-DAP virtual COM port** (COMxx): **115200
-baud, 8-N-1**. Example with PowerShell:
+Flash methods (measured on this board, ULINK2, ~45 KB image, erased baseline):
+
+| Method    | Command (ninja)  | Time   | Notes                         |
+| --------- | ---------------- | ------ | ----------------------------- |
+| OpenOCD   | `flash`          | ~3.3 s | default: fastest, verified+reset |
+| pyOCD     | `flash-pyocd`    | ~9 s   | ~7 s overhead when identical  |
+| probe-rs  | `flash-probe`    | ~11 s  | erase + verify + reset        |
+
+Read the console on the USB-serial virtual COM port (COMxx): **115200 baud,
+8-N-1**. Example with PowerShell:
 
 ```powershell
-$sp = New-Object System.IO.Ports.SerialPort('COM42',115200,[System.IO.Ports.Parity]::None,8,[System.IO.Ports.StopBits]::One)
+$sp = New-Object System.IO.Ports.SerialPort('COM36',115200,[System.IO.Ports.Parity]::None,8,[System.IO.Ports.StopBits]::One)
 $sp.ReadTimeout = 15000; $sp.Open()
 $sb = New-Object System.Text.StringBuilder
 $deadline = [DateTime]::Now.AddSeconds(15)

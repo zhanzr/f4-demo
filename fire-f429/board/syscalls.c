@@ -3,7 +3,7 @@
   * @brief   Minimal newlib retarget layer for a bare-metal STM32F429 build.
   *
   * _write() is redirected to the UART (USART1, PA9/PA10) so printf() output is
-  * visible on the CMSIS-DAP virtual COM port at 115200 baud.
+  * visible on a USB-serial virtual COM port at 115200 baud.
   */
 
 #include <errno.h>

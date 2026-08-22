@@ -40,8 +40,8 @@ Requires the CMake/Ninja environment from the board-level `../../README.md`.
 mkdir -p build && cd build
 cmake -G Ninja ..
 ninja          # builds .elf / .hex / .bin
-ninja flash    # programs the board via probe-rs / Keil ULINK2 (SWD)
+ninja flash    # programs the board via OpenOCD (see board README for flash options)
 ```
 
-The console is the board's UART on the CMSIS-DAP VCP — see the board-level
-`../../README.md` for baud/pins and a capture recipe.
+The console is the board's UART on a USB-serial virtual COM port — see the
+board-level `../../README.md` for baud/pins and a capture recipe.

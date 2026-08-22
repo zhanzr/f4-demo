@@ -2,13 +2,13 @@
 # Bare-metal (built-in flash + SRAM only). Blinks LED_R/G/B (PH10/11/12) and
 # LED_1 (PD12) one by one, prints the 180 MHz clock and the ADC1 internal
 # channels (VREFINT / temperature / VBAT) over USART1 (PA9/PA10) at 115200
-# through the CMSIS-DAP VCP.
+# through a USB-serial virtual COM port.
 #
 # Pico-style workflow:
 #   mkdir -p build && cd build
 #   cmake -G Ninja ..
 #   ninja           # builds .elf / .hex / .bin
-#   ninja flash     # programs the board (probe-rs, Fire CMSIS-DAP SWD)
+#   ninja flash     # programs the board via OpenOCD (ULINK2 SWD)
 
 cmake_minimum_required(VERSION 3.13)
 

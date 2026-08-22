@@ -3,7 +3,7 @@
   * @brief   UART printf backend for the fire-f429 board (STM32F429IGT6).
   *
   * printf() output is redirected to USART1 (PA9 = TX, PA10 = RX, AF7),
-  * 115200 8-N-1, wired to the CMSIS-DAP virtual COM port (VCP).
+  * 115200 8-N-1, wired to a USB-serial virtual COM port (VCP).
   */
 
 #ifndef __UART_PRINTF_H__
