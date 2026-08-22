@@ -37,6 +37,23 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
 
 - `bare/blink_hello` — LED blink + ADC internal-channel demo (LEDs blink one
   by one; prints the 180 MHz clock and VREFINT / temperature / VBAT over USART1).
+- `bare/dhry_180m` — Dhrystone 2.1, 2,000,000 runs (GCC **or** armclang).
+  Measured GCC: **391,198 Dhrystones/s, 1.237 DMIPS/MHz**. See its README.
+- `bare/coremark_180m` — CoreMark 1.0.1, 10,000 iterations (GCC **or**
+  armclang). Measured GCC: **470.2 iterations/s**, crcfinal `0x988c`. See its
+  README.
+
+## CCM RAM (0x10000000)
+
+The 64 KB **CCM** (Core Coupled Memory) is CPU-only (D-bus, 0 wait states —
+not accessible by DMA/AHB masters). The linker script uses it for:
+
+- the **.ccmram** section — variables placed there explicitly via
+  `__attribute__((section(".ccmram")))`,
+- the **stack** (`.stack`, NOLOAD) — CPU-only access, so SRAM1/2/3 stay fully
+  available to the application and AHB masters.
+
+The heap lives in normal SRAM (limit = top of RAM, `_eram`).
 
 ## Clock tree (180 MHz)
 

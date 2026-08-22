@@ -14,9 +14,9 @@
 
 /* Linker-provided end of static data / start of heap. */
 extern char end[];
-extern char _estack[];
+extern char _eram[];   /* top of normal SRAM (heap limit; stack lives in CCM) */
 
-#define HEAP_LIMIT ((char *)_estack - 0x1000)   /* leave room for the stack */
+#define HEAP_LIMIT ((char *)_eram)
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,13 +1,24 @@
 /* GNU ARM GCC linker script for STM32F429IGT6 (fire-f429 board).
  *
- *   FLASH : 1 MB @ 0x08000000
- *   SRAM  : 256 KB total = SRAM1 112 KB + SRAM2 16 KB + SRAM3 64 KB + CCM 64 KB
- *   Linked RAM : 192 KB @ 0x20000000 (SRAM1+SRAM2+SRAM3, 112+16+64, contiguous)
- *                CCM 64 KB @ 0x10000000 is NOT used by this script.
+ * Memory layout:
+ *   FLASH : 1 MB   @ 0x08000000
+ *   RAM   : 192 KB @ 0x20000000   SRAM1 112K + SRAM2 16K + SRAM3 64K
+ *                                  (contiguous, accessible by all AHB masters)
+ *   CCM   : 64 KB  @ 0x10000000   Core Coupled Memory - CPU-only (D-bus),
+ *                                  0-wait, NOT accessible by DMA/AHB masters.
+ *
+ * CCM usage:
+ *   - .ccmram section holds variables explicitly placed there via
+ *     __attribute__((section(".ccmram")))  (CPU-only, but optimum for
+ *     latency-critical data; see "Symbols" below).
+ *   - .stack is placed in CCM (CPU-only access, never DMA'd) so SRAM1/2/3
+ *     stay fully available to the application + AHB masters.
+ *   - _sbrk() heap is limited to the top of RAM (see syscalls.c HEAP_LIMIT).
  *
  * Symbols consumed by startup_stm32f429xx.s:
  *   _estack, _sidata, _sdata, _edata, _sbss, _ebss
  * Symbols consumed by syscalls.c (_sbrk): end / _end
+ * Symbols consumed by board/syscalls.c (_sbrk heap limit): _eram
  */
 
 ENTRY(Reset_Handler)
@@ -16,9 +27,13 @@ MEMORY
 {
   FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 1024K
   RAM (xrw)       : ORIGIN = 0x20000000, LENGTH = 192K
+  CCM (xrw)       : ORIGIN = 0x10000000, LENGTH = 64K
 }
 
-_estack       = ORIGIN(RAM) + LENGTH(RAM);  /* top of RAM, stack grows down */
+/* Stack top in CCM (CPU-only 0-wait RAM). Stack grows down from _estack. */
+_estack       = ORIGIN(CCM) + LENGTH(CCM);
+/* Heap limit: top of normal SRAM (the heap itself stays in RAM). */
+_eram         = ORIGIN(RAM)  + LENGTH(RAM);
 _Min_Heap_Size = 0x400;
 _Min_Stack_Size = 0x1000;
 
@@ -119,6 +134,7 @@ SECTIONS
   _end = .; __end__ = .; end = .;
   PROVIDE ( end = . );
 
+  /* Heap in normal SRAM (accessible by DMA if needed). */
   .heap :
   {
     . = ALIGN(8);
@@ -127,13 +143,25 @@ SECTIONS
     __heap_end__ = .;
   } >RAM
 
-  .stack :
+  /* CCM: zero-init data placed here explicitly (NOLOAD - CPU-only RAM). */
+  .ccmram (NOLOAD) :
+  {
+    . = ALIGN(8);
+    __ccmram_start__ = .;
+    *(.ccmram)
+    *(.ccmram*)
+    . = ALIGN(8);
+    __ccmram_end__ = .;
+  } >CCM
+
+  /* Stack in CCM (CPU-only, 0-wait; not DMA-accessible by design). */
+  .stack (NOLOAD) :
   {
     . = ALIGN(8);
     __stack_start__ = .;
     . = . + _Min_Stack_Size;
     __stack_end__ = .;
-  } >RAM
+  } >CCM
 
   /* Remove unused sections from the output. */
   /DISCARD/ :
