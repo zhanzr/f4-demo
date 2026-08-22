@@ -88,7 +88,9 @@ time plus an iteration count within the expected range.
 
 - arm-none-eabi-gcc 15.3.1 (`D:/Arm/GNU Toolchain mingw-w64-x86_64-arm-none-eabi`)
 - Keil Arm Compiler 6 / armclang 6.24.0 (`D:/Keil_v5/ARM/ARMCLANG/bin/armclang.exe`)
-- STM32Cube_FW_F4 v1.28.3 HAL (`C:/Users/user1/STM32Cube/Repository/STM32Cube_FW_F4_V1.28.3`)
+- STM32F4 HAL + CMSIS — **vendored** in the repo root `drivers/` (trimmed
+  subset of STM32Cube_FW_F4 v1.28.3; see the root `README.md` for how to use
+  the full package instead)
 - probe-rs 0.32 (`cargo install probe-rs-tools`) — sees the ULINK2 as `Keil ULINK2 CMSIS-DAP` (`c251:2722:V0010M9E`)
 - OpenOCD 0.12 (`C:/msys64/mingw64/bin/openocd.exe`) — alternative flasher
 - CMake ≥ 3.13 + Ninja

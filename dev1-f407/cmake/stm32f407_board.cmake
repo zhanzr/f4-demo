@@ -9,15 +9,18 @@
 #
 # Requires the project to enable ASM (project(X C ASM)).
 
+# Vendored HAL/CMSIS (repo root `drivers/`). To use the full STM32Cube_FW_F4
+# package instead, point this at its root (contains Drivers/).
+#   e.g. -DSTM32F4_HAL_ROOT="C:/Users/user1/STM32Cube/Repository/STM32Cube_FW_F4_V1.28.3"
 set(STM32F4_HAL_ROOT
-    "C:/Users/user1/STM32Cube/Repository/STM32Cube_FW_F4_V1.28.3" CACHE PATH
-    "Root of the STM32Cube_FW_F4 HAL library (contains Drivers/)")
+    "${CMAKE_CURRENT_LIST_DIR}/../../drivers" CACHE PATH
+    "Root of the STM32F4 HAL+ CMSIS (vendored `drivers/` or a full STM32Cube_FW_F4 package)")
 
 set(BOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/../board)
-set(STM32F4_HAL_INC ${STM32F4_HAL_ROOT}/Drivers/STM32F4xx_HAL_Driver/Inc)
-set(STM32F4_HAL_SRC ${STM32F4_HAL_ROOT}/Drivers/STM32F4xx_HAL_Driver/Src)
-set(STM32F4_CMSIS_DEV ${STM32F4_HAL_ROOT}/Drivers/CMSIS/Device/ST/STM32F4xx/Include)
-set(STM32F4_CMSIS_CORE ${STM32F4_HAL_ROOT}/Drivers/CMSIS/Include)
+set(STM32F4_HAL_INC ${STM32F4_HAL_ROOT}/STM32F4xx_HAL_Driver/Inc)
+set(STM32F4_HAL_SRC ${STM32F4_HAL_ROOT}/STM32F4xx_HAL_Driver/Src)
+set(STM32F4_CMSIS_DEV ${STM32F4_HAL_ROOT}/CMSIS/Device/ST/STM32F4xx/Include)
+set(STM32F4_CMSIS_CORE ${STM32F4_HAL_ROOT}/CMSIS/Include)
 
 function(stm32f407_apply_board TGT OPT)
     separate_arguments(OPT_LIST NATIVE_COMMAND "${OPT}")
