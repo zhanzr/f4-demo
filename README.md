@@ -12,7 +12,7 @@ build/flash/console — live in each board folder's README.
 | ---------------- | --------------------------------------------------- |
 | `dev1-f407/`     | Custom STM32F407VET6 @ 168 MHz, 25 MHz HSE, 3 LEDs, USART3 console (see its README) |
 | `nano-f407/`     | STM32F407VET6 @ 168 MHz, 8 MHz HSE, 1 LED (PB0), USART1 → ST-Link VCP console (see its README) |
-| `fire-f429/`     | STM32F429 placeholder (see its README)             |
+| `fire-f429/`     | STM32F429IGT6 @ 180 MHz, 1 MB flash / 256 KB SRAM, 4 LEDs (PH10/11/12, PD12), USART1 → CMSIS-DAP VCP console (see its README) |
 
 The `-<chip>` suffix in board folder names keeps it a multi-board/**multi-chip**
 repo: e.g. a `nano-f411` or `nano-f446` would sit next to `nano-f407`, and a
