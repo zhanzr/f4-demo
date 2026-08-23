@@ -34,9 +34,9 @@ memory model, `DATA_IN_ExtSDRAM`).
 
 ## Result
 
-Measured on hardware (2026-03): the module enumerates on SDIO,
-`wwd_management_wifi_on` succeeds, and the AP list prints to the serial
-console. Sample output:
+Measured on hardware: the module enumerates on SDIO, `wwd_management_wifi_on`
+succeeds, and the AP list prints to the serial console. Sample output (AP
+names shown here are generic placeholders):
 
 ```
 ==== fire-f429 WiFi scan (EMW1062 / AP6181 / SDIO) ====
@@ -46,23 +46,14 @@ Starting Wiced v006.002.001
 Starting Scan
 Waiting for scan results...
 
-#001 SSID          : TP-LINK_IDI888888
-     BSSID         : 98:97:CC:6B:97:C1
-     RSSI          : -64dBm
+#001 SSID          : scanned_ap_name_xx
+     BSSID         : AA:BB:CC:DD:EE:FF
+     RSSI          : -45dBm
      Max Data Rate : 300.0 Mbits/s
      Network Type  : Infrastructure
      Security      : WPA2 AES
      Radio Band    : 2.4GHz
      Channel       : 6
-
-#002 SSID          : HIKVISION_AE4490_2G4
-     BSSID         : B0:8B:92:F0:E1:30
-     RSSI          : -61dBm
-     Max Data Rate : 144.4 Mbits/s
-     Network Type  : Infrastructure
-     Security      : WPA2 AES
-     Radio Band    : 2.4GHz
-     Channel       : 8
 
 End of scan results - next scan in 5 seconds
 ```

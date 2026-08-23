@@ -106,8 +106,8 @@ size_t strnlen(const char *s, size_t max_len)
 #define JOIN_EAPOL_KEY_G1_TIMEOUT   (uint32_t)(1 << 8)
 #define JOIN_EAPOL_KEY_FAILURE      (uint32_t)(1 << 9)
 
-#define DEFAULT_JOIN_ATTEMPT_TIMEOUT     (7000) /* Overall join attempt timeout in milliseconds. */
-#define DEFAULT_EAPOL_KEY_PACKET_TIMEOUT (2500) /* Timeout when waiting for EAPOL key packet M1 or M3 in milliseconds. Some APs may be slow to provide M1 and 1000 ms is not long enough for edge of cell. */
+#define DEFAULT_JOIN_ATTEMPT_TIMEOUT     (15000) /* Overall join attempt timeout in milliseconds. (raised from 7000: the HIKVISION AP is slow to complete the WPA2 handshake at -60 dBm) */
+#define DEFAULT_EAPOL_KEY_PACKET_TIMEOUT (8000) /* Timeout when waiting for EAPOL key packet M1 or M3 in milliseconds. (raised from 2500: the HIKVISION AP is slow to deliver M3 at edge of cell) */
 
 #ifndef DEFAULT_PM2_SLEEP_RET_TIME
 #define DEFAULT_PM2_SLEEP_RET_TIME   (200)
