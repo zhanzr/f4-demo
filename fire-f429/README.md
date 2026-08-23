@@ -20,6 +20,8 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   - **LED_G** — PH11
   - **LED_B** — PH12
   - **LED_1** — PD12
+- Default LED demos use **LED_1 (PD12)**. The RGB LEDs share pins with the DVI
+  interface and are reserved for demos that explicitly need them.
 - Console: **USART1** on **PA9 (TX) / PA10 (RX)**, AF7, **115200 8-N-1**
 - Debug: **Keil ULINK2** (CMSIS-DAP, SWD) — probe selector `c251:2722:V0010M9E`
 
@@ -42,6 +44,11 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
 - `bare/coremark_180m` — CoreMark 1.0.1, 10,000 iterations (GCC **or**
   armclang). Measured GCC: **470.2 iterations/s**, crcfinal `0x988c`. See its
   README.
+- `app/blink_hello` — the same blink + ADC demo with `.data`, `.bss`, and heap
+  located in onboard SDRAM. `SystemInit()` initializes SDRAM before the C
+  runtime copies `.data` and clears `.bss`; the app prints linker addresses to
+  verify the placement. Bare projects leave `DATA_IN_ExtSDRAM` undefined and
+  keep their normal flash/SRAM layout.
 
 ## CCM RAM (0x10000000)
 

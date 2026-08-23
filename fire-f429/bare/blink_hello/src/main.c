@@ -5,6 +5,13 @@
 /* VREFINT typical value (1.18..1.24 V, typ 1.21). */
 #define VREFINT_TYPICAL_MV   1210U
 
+uint32_t app_data_probe = 0x12345678UL;
+uint32_t app_bss_probe;
+extern char _sdata[];
+extern char _edata[];
+extern char _sbss[];
+extern char _ebss[];
+
 /* Factory temperature-sensor calibration (12-bit, VDDA = 3.3 V):
  *   TS_CAL1 @ 0x1FFF7A2C  ->  30 C
  *   TS_CAL2 @ 0x1FFF7A2E  -> 110 C        */
@@ -68,23 +75,23 @@ int main(void)
     ADC_Internal_Init();
 
     printf("\r\n==== fire-f429 (STM32F429IGT6) blink_hello @ 180 MHz ====\r\n");
-    printf("SYSCLK = %lu Hz (%lu MHz)\r\n",
+        printf("SYSCLK = %lu Hz (%lu MHz)\r\n",
            (unsigned long)SystemCoreClock,
            (unsigned long)(SystemCoreClock / 1000000UL));
+        printf("pointers: data=%p bss=%p _sdata=%p _edata=%p _sbss=%p _ebss=%p\r\n",
+            (void *)&app_data_probe, (void *)&app_bss_probe,
+            (void *)_sdata, (void *)_edata, (void *)_sbss, (void *)_ebss);
 
     uint32_t phase = 0;
     uint32_t last_report = 0;
 
     while (1)
     {
-        /* Blink the four LEDs (all low-active) one by one. */
-        switch (phase % 4)
-        {
-        case 0: LED_R_ON();  LED_G_OFF(); LED_B_OFF(); LED_1_OFF(); break;
-        case 1: LED_R_OFF(); LED_G_ON();  LED_B_OFF(); LED_1_OFF(); break;
-        case 2: LED_R_OFF(); LED_G_OFF(); LED_B_ON();  LED_1_OFF(); break;
-        default: LED_R_OFF(); LED_G_OFF(); LED_B_OFF(); LED_1_ON();  break;
-        }
+        /* Use the standalone PD12 LED for the default blink path. */
+        LED_R_OFF();
+        LED_G_OFF();
+        LED_B_OFF();
+        LED_1_TOGGLE();
         phase++;
         HAL_Delay(250);
 

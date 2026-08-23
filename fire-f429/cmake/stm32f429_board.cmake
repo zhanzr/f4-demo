@@ -22,6 +22,10 @@ set(STM32F4_HAL_SRC ${STM32F4_HAL_ROOT}/STM32F4xx_HAL_Driver/Src)
 set(STM32F4_CMSIS_DEV ${STM32F4_HAL_ROOT}/CMSIS/Device/ST/STM32F4xx/Include)
 set(STM32F4_CMSIS_CORE ${STM32F4_HAL_ROOT}/CMSIS/Include)
 
+if(NOT STM32_LINKER_SCRIPT)
+    set(STM32_LINKER_SCRIPT ${BOARD_DIR}/stm32f429igt6.ld)
+endif()
+
 function(stm32f429_apply_board TGT OPT)
     separate_arguments(OPT_LIST NATIVE_COMMAND "${OPT}")
 
@@ -84,7 +88,7 @@ function(stm32f429_apply_board TGT OPT)
     )
 
     set_target_properties(${TGT} PROPERTIES
-        LINK_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 ${OPT} -Wl,--gc-sections -nostartfiles -Wl,-Map=${PROJECT_NAME}.map -T ${BOARD_DIR}/stm32f429igt6.ld -lc -lm"
+        LINK_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 ${OPT} -Wl,--gc-sections -nostartfiles -Wl,-Map=${PROJECT_NAME}.map -T ${STM32_LINKER_SCRIPT} -lc -lm"
     )
 
     # newlib/libgcc's thumb/v7e-m+fp multilib objects are built with

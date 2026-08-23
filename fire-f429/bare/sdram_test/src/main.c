@@ -9,34 +9,6 @@
 
 static SDRAM_HandleTypeDef hsdram;
 
-static void NAND_Disable(void)
-{
-    GPIO_InitTypeDef gpio = {0};
-
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    __HAL_RCC_GPIOD_CLK_ENABLE();
-    __HAL_RCC_GPIOG_CLK_ENABLE();
-
-    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_9, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4 | GPIO_PIN_5, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11 | GPIO_PIN_12, GPIO_PIN_RESET);
-
-    gpio.Mode = GPIO_MODE_OUTPUT_PP;
-    gpio.Pull = GPIO_NOPULL;
-    gpio.Speed = GPIO_SPEED_FREQ_MEDIUM;
-
-    gpio.Pin = GPIO_PIN_13;
-    HAL_GPIO_Init(GPIOB, &gpio);
-
-    gpio.Pin = GPIO_PIN_9;
-    HAL_GPIO_Init(GPIOG, &gpio);
-
-    gpio.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_11 | GPIO_PIN_12;
-    gpio.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOD, &gpio);
-}
-
 void HAL_SDRAM_MspInit(SDRAM_HandleTypeDef *hsdram_handle)
 {
     GPIO_InitTypeDef gpio = {0};
@@ -158,7 +130,6 @@ int main(void)
 
     HAL_Init();
     Board_Init();
-    NAND_Disable();
 
     printf("\r\n==== fire-f429 SDRAM test ====\r\n");
     printf("IS42S16400J: 8 MiB, 16-bit, FMC clock %lu MHz\r\n", SDRAM_FMC_CLOCK);

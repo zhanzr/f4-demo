@@ -149,6 +149,28 @@ const uint8_t APBPrescTable[8]  = {0, 0, 0, 0, 1, 2, 3, 4};
   static void SystemInit_ExtMemCtl(void); 
 #endif /* DATA_IN_ExtSRAM || DATA_IN_ExtSDRAM */
 
+#if defined(DATA_IN_ExtSDRAM)
+static void SystemInit_EarlyClock(void)
+{
+  RCC->APB1ENR |= RCC_APB1ENR_PWREN;
+  PWR->CR |= PWR_CR_VOS_0 | PWR_CR_VOS_1;
+
+  RCC->CR |= RCC_CR_HSEON;
+  while ((RCC->CR & RCC_CR_HSERDY) == 0U) { }
+
+  FLASH->ACR = FLASH_ACR_ICEN | FLASH_ACR_DCEN | FLASH_ACR_PRFTEN |
+               FLASH_ACR_LATENCY_6WS;
+  RCC->PLLCFGR = 25U | (360U << 6) | RCC_PLLCFGR_PLLSRC_HSE | (7U << 24);
+  RCC->CR |= RCC_CR_PLLON;
+  while ((RCC->CR & RCC_CR_PLLRDY) == 0U) { }
+
+  RCC->CFGR = RCC_CFGR_HPRE_DIV1 | RCC_CFGR_PPRE1_DIV4 |
+              RCC_CFGR_PPRE2_DIV2 | RCC_CFGR_SW_PLL;
+  while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL) { }
+
+}
+#endif /* DATA_IN_ExtSDRAM */
+
 /**
   * @}
   */
@@ -172,6 +194,9 @@ void SystemInit(void)
   #endif
 
 #if defined (DATA_IN_ExtSRAM) || defined (DATA_IN_ExtSDRAM)
+#if defined(DATA_IN_ExtSDRAM)
+  SystemInit_EarlyClock();
+#endif /* DATA_IN_ExtSDRAM */
   SystemInit_ExtMemCtl(); 
 #endif /* DATA_IN_ExtSRAM || DATA_IN_ExtSDRAM */
 
@@ -288,6 +313,7 @@ void SystemInit_ExtMemCtl(void)
 
   /* Delay after an RCC peripheral clock enabling */
   tmp = READ_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOCEN);
+
   
   /* Connect PDx pins to FMC Alternate function */
   GPIOD->AFR[0]  = 0x00CCC0CC;
@@ -462,7 +488,12 @@ void SystemInit_ExtMemCtl(void)
 #endif /* STM32F446xx */  
   /* Delay after an RCC peripheral clock enabling */
   tmp = READ_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIOCEN);
-  
+
+  /* Connect PC0 (FMC_NWE) to FMC alternate function. */
+  GPIOC->AFR[0] |= 0x0000000C;
+  GPIOC->MODER |= 0x00000002;
+  GPIOC->OSPEEDR |= 0x00000002;
+
 #if defined(STM32F446xx)
   /* Connect PAx pins to FMC Alternate function */
   GPIOA->AFR[0]  |= 0xC0000000;
@@ -563,35 +594,35 @@ void SystemInit_ExtMemCtl(void)
   /* No pull-up, pull-down for PIx pins */ 
   GPIOI->PUPDR   = 0x00000000;
 #endif /* STM32F427xx || STM32F437xx || STM32F429xx || STM32F439xx || STM32F469xx || STM32F479xx */
-  
+
 /*-- FMC Configuration -------------------------------------------------------*/
   /* Enable the FMC interface clock */
   RCC->AHB3ENR |= 0x00000001;
   /* Delay after an RCC peripheral clock enabling */
   tmp = READ_BIT(RCC->AHB3ENR, RCC_AHB3ENR_FMCEN);
 
-  /* Configure and enable SDRAM bank1 */
+  /* Configure and enable the app SDRAM on bank 2. */
 #if defined(STM32F446xx)
   FMC_Bank5_6->SDCR[0] = 0x00001954;
 #else  
-  FMC_Bank5_6->SDCR[0] = 0x000019E4;
+  FMC_Bank5_6->SDCR[1] = 0x00001954;
 #endif /* STM32F446xx */
-  FMC_Bank5_6->SDTR[0] = 0x01115351;      
+  FMC_Bank5_6->SDTR[1] = 0x01115351;
   
   /* SDRAM initialization sequence */
   /* Clock enable command */
-  FMC_Bank5_6->SDCMR = 0x00000011; 
+  FMC_Bank5_6->SDCMR = 0x00000009;
   tmpreg = FMC_Bank5_6->SDSR & 0x00000020; 
   while((tmpreg != 0) && (timeout-- > 0))
   {
     tmpreg = FMC_Bank5_6->SDSR & 0x00000020; 
   }
 
-  /* Delay */
-  for (index = 0; index<1000; index++);
+  /* Delay after clock enable; reset runs from the 16 MHz HSI. */
+  for (index = 0; index<100000; index++);
   
   /* PALL command */
-  FMC_Bank5_6->SDCMR = 0x00000012;           
+  FMC_Bank5_6->SDCMR = 0x0000000A;
   tmpreg = FMC_Bank5_6->SDSR & 0x00000020;
   timeout = 0xFFFF;
   while((tmpreg != 0) && (timeout-- > 0))
@@ -603,7 +634,7 @@ void SystemInit_ExtMemCtl(void)
 #if defined(STM32F446xx)
   FMC_Bank5_6->SDCMR = 0x000000F3;
 #else  
-  FMC_Bank5_6->SDCMR = 0x00000073;
+  FMC_Bank5_6->SDCMR = 0x0000002B;
 #endif /* STM32F446xx */
   tmpreg = FMC_Bank5_6->SDSR & 0x00000020;
   timeout = 0xFFFF;
@@ -616,7 +647,7 @@ void SystemInit_ExtMemCtl(void)
 #if defined(STM32F446xx)
   FMC_Bank5_6->SDCMR = 0x00044014;
 #else  
-  FMC_Bank5_6->SDCMR = 0x00046014;
+  FMC_Bank5_6->SDCMR = 0x00044408;
 #endif /* STM32F446xx */
   tmpreg = FMC_Bank5_6->SDSR & 0x00000020;
   timeout = 0xFFFF;
@@ -630,12 +661,12 @@ void SystemInit_ExtMemCtl(void)
 #if defined(STM32F446xx)
   FMC_Bank5_6->SDRTR = (tmpreg | (0x0000050C<<1));
 #else    
-  FMC_Bank5_6->SDRTR = (tmpreg | (0x0000027C<<1));
+  FMC_Bank5_6->SDRTR = (tmpreg | (0x0000056A<<1));
 #endif /* STM32F446xx */
   
   /* Disable write protection */
-  tmpreg = FMC_Bank5_6->SDCR[0]; 
-  FMC_Bank5_6->SDCR[0] = (tmpreg & 0xFFFFFDFF);
+  tmpreg = FMC_Bank5_6->SDCR[1];
+  FMC_Bank5_6->SDCR[1] = (tmpreg & 0xFFFFFDFF);
 #endif /* DATA_IN_ExtSDRAM */
 #endif /* STM32F427xx || STM32F437xx || STM32F429xx || STM32F439xx || STM32F446xx || STM32F469xx || STM32F479xx */
 
