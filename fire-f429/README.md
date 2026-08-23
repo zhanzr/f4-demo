@@ -59,6 +59,10 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
 - `bare/ee_flash_test` and `app/ee_flash_test` — AT24C02 EEPROM erase/program/read
   comparison using internal-SRAM versus SDRAM-resident buffers. Both pass
   verification; see their READMEs for measurements.
+- `app/wifi_scan` — Wi-Fi AP scan with the on-board **EMW1062** (AP6181 /
+  BCM43362) module over SDIO1, using the vendored WICED/WWD SDK in
+  `drivers/wifi_ap6181`. Prints SSID / BSSID / RSSI / channel over USART1.
+  Verified on hardware: sees the surrounding 2.4 GHz APs. See its README.
 
 ## Creating a project
 

@@ -23,3 +23,6 @@ _build/
 *.swp
 Thumbs.db
 .DS_Store
+
+# WiFi credentials (never commit)
+**/wifi_config.h

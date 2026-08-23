@@ -98,6 +98,18 @@ SECTIONS
     _eearly_bss = .;
   } >RAM
 
+  /* DMA-accessible buffers (e.g. SDIO) must be in internal SRAM: on the F4
+   * the DMA masters cannot reach the external SDRAM. */
+  .sram_dma (NOLOAD) :
+  {
+    . = ALIGN(8);
+    __sram_dma_start__ = .;
+    *(.sram_dma)
+    *(.sram_dma*)
+    . = ALIGN(8);
+    __sram_dma_end__ = .;
+  } >RAM
+
   .bss (NOLOAD) :
   {
     . = ALIGN(4);

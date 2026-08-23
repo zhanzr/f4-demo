@@ -43,12 +43,18 @@ function(stm32f429_apply_board TGT OPT)
         ${BOARD_DIR}/board.c
         ${BOARD_DIR}/board_sdram.c
         ${BOARD_DIR}/stm32f4xx_hal_msp.c
-        ${BOARD_DIR}/stm32f4xx_it.c
         ${BOARD_DIR}/swv_printf.c
         ${BOARD_DIR}/uart_printf.c
         ${BOARD_DIR}/syscalls.c
         ${BOARD_DIR}/startup_stm32f429xx.s
         ${BOARD_DIR}/system_stm32f4xx.c
+    )
+    # A project (e.g. an RTOS app) may provide its own interrupt handlers and
+    # skip the shared stm32f4xx_it.c (HAL SysTick) by setting STM32_SKIP_BOARD_IT.
+    if(NOT STM32_SKIP_BOARD_IT)
+        target_sources(${TGT} PRIVATE ${BOARD_DIR}/stm32f4xx_it.c)
+    endif()
+    target_sources(${TGT} PRIVATE
         ${STM32F4_HAL_SRC}/stm32f4xx_hal.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_adc.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_adc_ex.c
