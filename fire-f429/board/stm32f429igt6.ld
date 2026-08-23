@@ -28,6 +28,7 @@ MEMORY
   FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 1024K
   RAM (xrw)       : ORIGIN = 0x20000000, LENGTH = 192K
   CCM (xrw)       : ORIGIN = 0x10000000, LENGTH = 64K
+  SDRAM (xrw)     : ORIGIN = 0xD0000000, LENGTH = 8M
 }
 
 /* Stack top in CCM (CPU-only 0-wait RAM). Stack grows down from _estack. */
@@ -164,6 +165,18 @@ SECTIONS
     . = ALIGN(8);
     __ccmram_end__ = .;
   } >CCM
+
+  /* LTDC framebuffer (800x480 RGB888, 1.125 MiB) in SDRAM. The bare build
+   * initializes SDRAM at runtime before first touching the buffer. */
+  .sdram_fb (NOLOAD) :
+  {
+    . = ALIGN(8);
+    __sdram_fb_start__ = .;
+    *(.sdram_fb)
+    *(.sdram_fb*)
+    . = ALIGN(8);
+    __sdram_fb_end__ = .;
+  } >SDRAM
 
   /* Stack in CCM (CPU-only, 0-wait; not DMA-accessible by design). */
   .stack (NOLOAD) :

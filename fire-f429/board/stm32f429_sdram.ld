@@ -127,6 +127,17 @@ SECTIONS
     __heap_end__ = .;
   } >SDRAM
 
+  /* LTDC framebuffer: 800x480 RGB888 (1.125 MiB), in SDRAM. */
+  .sdram_fb (NOLOAD) :
+  {
+    . = ALIGN(8);
+    __sdram_fb_start__ = .;
+    *(.sdram_fb)
+    *(.sdram_fb*)
+    . = ALIGN(8);
+    __sdram_fb_end__ = .;
+  } >SDRAM
+
   .ccmram (NOLOAD) :
   {
     . = ALIGN(8);
