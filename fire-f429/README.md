@@ -49,6 +49,27 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   before the C runtime copies `.data` and clears `.bss`; the app prints linker
   addresses to verify the placement. Bare projects leave `DATA_IN_ExtSDRAM`
   undefined and keep their normal flash/SRAM layout.
+- `app/dhry_180m` — Dhrystone with runtime data in SDRAM. Measured GCC:
+  **175,700.609 Dhrystones/s, 0.556 DMIPS/MHz**.
+- `app/coremark_180m` — CoreMark with runtime data in SDRAM. Measured GCC:
+  **194.246 iterations/s**, crcfinal `0x988c`.
+
+## Creating a project
+
+Use the shared board layer in the project's `CMakeLists.txt`:
+
+```cmake
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f429_board.cmake)
+stm32f429_apply_board(${PROJECT_NAME}.elf "-O1")
+```
+
+For a bare-metal project, omit `DATA_IN_ExtSDRAM` and use the default linker
+script `board/stm32f429igt6.ld`; `.data`, `.bss`, and heap stay in internal
+SRAM. For an SDRAM-remapped project, set
+`STM32_LINKER_SCRIPT` to `board/stm32f429_sdram.ld` and define
+`DATA_IN_ExtSDRAM` on the target. The shared startup then initializes SDRAM
+before copying `.data` or clearing `.bss`; the early HAL state stays in
+internal RAM.
 
 ## CCM RAM (0x10000000)
 
