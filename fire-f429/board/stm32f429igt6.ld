@@ -117,6 +117,17 @@ SECTIONS
     _edata = .;
   } >RAM AT> FLASH
 
+  .early_bss (NOLOAD) :
+  {
+    . = ALIGN(4);
+    _searly_bss = .;
+    *(.bss.uwTick)
+    *(.early_bss)
+    *(.early_bss*)
+    . = ALIGN(4);
+    _eearly_bss = .;
+  } >RAM
+
   . = ALIGN(4);
   .bss :
   {

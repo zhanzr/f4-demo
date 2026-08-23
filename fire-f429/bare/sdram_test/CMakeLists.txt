@@ -15,8 +15,6 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 add_executable(${PROJECT_NAME}.elf
     src/main.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_sdram.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_fmc.c
 )
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f429_board.cmake)

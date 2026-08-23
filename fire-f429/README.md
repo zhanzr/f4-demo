@@ -45,10 +45,10 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   armclang). Measured GCC: **470.2 iterations/s**, crcfinal `0x988c`. See its
   README.
 - `app/blink_hello` — the same blink + ADC demo with `.data`, `.bss`, and heap
-  located in onboard SDRAM. `SystemInit()` initializes SDRAM before the C
-  runtime copies `.data` and clears `.bss`; the app prints linker addresses to
-  verify the placement. Bare projects leave `DATA_IN_ExtSDRAM` undefined and
-  keep their normal flash/SRAM layout.
+  located in onboard SDRAM. `SystemInit()` initializes SDRAM through the HAL
+  before the C runtime copies `.data` and clears `.bss`; the app prints linker
+  addresses to verify the placement. Bare projects leave `DATA_IN_ExtSDRAM`
+  undefined and keep their normal flash/SRAM layout.
 
 ## CCM RAM (0x10000000)
 

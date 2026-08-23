@@ -41,6 +41,7 @@ function(stm32f429_apply_board TGT OPT)
 
     target_sources(${TGT} PRIVATE
         ${BOARD_DIR}/board.c
+        ${BOARD_DIR}/board_sdram.c
         ${BOARD_DIR}/stm32f4xx_hal_msp.c
         ${BOARD_DIR}/stm32f4xx_it.c
         ${BOARD_DIR}/swv_printf.c
@@ -61,6 +62,8 @@ function(stm32f429_apply_board TGT OPT)
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_rcc.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_rcc_ex.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_uart.c
+        ${STM32F4_HAL_SRC}/stm32f4xx_hal_sdram.c
+        ${STM32F4_HAL_SRC}/stm32f4xx_ll_fmc.c
     )
 
     target_include_directories(${TGT} PRIVATE

@@ -60,6 +60,20 @@ defined in linker script */
 Reset_Handler: 
   ldr   sp, =_estack       /* set stack pointer */
 
+/* Clear the small internal-RAM section needed by early HAL initialization. */
+  ldr   r0, =_searly_bss
+  ldr   r1, =_eearly_bss
+  movs  r2, #0
+  b     LoopFillEarlyBss
+
+FillEarlyBss:
+  str   r2, [r0]
+  adds  r0, r0, #4
+
+LoopFillEarlyBss:
+  cmp   r0, r1
+  bcc   FillEarlyBss
+
 /* Call the clock system initialization function.*/
   bl  SystemInit   
  

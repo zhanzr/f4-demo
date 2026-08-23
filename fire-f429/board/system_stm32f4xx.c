@@ -150,6 +150,10 @@ const uint8_t APBPrescTable[8]  = {0, 0, 0, 0, 1, 2, 3, 4};
 #endif /* DATA_IN_ExtSRAM || DATA_IN_ExtSDRAM */
 
 #if defined(DATA_IN_ExtSDRAM)
+void Board_SDRAM_EarlyInit(void);
+#endif
+
+#if defined(DATA_IN_ExtSDRAM)
 static void SystemInit_EarlyClock(void)
 {
   RCC->APB1ENR |= RCC_APB1ENR_PWREN;
@@ -316,68 +320,51 @@ void SystemInit_ExtMemCtl(void)
 
   
   /* Connect PDx pins to FMC Alternate function */
-  GPIOD->AFR[0]  = 0x00CCC0CC;
-  GPIOD->AFR[1]  = 0xCCCCCCCC;
-  /* Configure PDx pins in Alternate function mode */  
-  GPIOD->MODER   = 0xAAAA0A8A;
-  /* Configure PDx pins speed to 100 MHz */  
-  GPIOD->OSPEEDR = 0xFFFF0FCF;
-  /* Configure PDx pins Output type to push-pull */  
-  GPIOD->OTYPER  = 0x00000000;
-  /* No pull-up, pull-down for PDx pins */ 
-  GPIOD->PUPDR   = 0x00000000;
+  FMC_SDRAM_InitTypeDef sdram_init = {
+    .SDBank = FMC_SDRAM_BANK2,
+    .ColumnBitsNumber = FMC_SDRAM_COLUMN_BITS_NUM_8,
+    .RowBitsNumber = FMC_SDRAM_ROW_BITS_NUM_12,
+    .MemoryDataWidth = FMC_SDRAM_MEM_BUS_WIDTH_16,
+    .InternalBankNumber = FMC_SDRAM_INTERN_BANKS_NUM_4,
+    .CASLatency = FMC_SDRAM_CAS_LATENCY_2,
+    .WriteProtection = FMC_SDRAM_WRITE_PROTECTION_DISABLE,
+    .SDClockPeriod = FMC_SDRAM_CLOCK_PERIOD_2,
+    .ReadBurst = FMC_SDRAM_RBURST_ENABLE,
+    .ReadPipeDelay = FMC_SDRAM_RPIPE_DELAY_0
+  };
+  FMC_SDRAM_TimingTypeDef sdram_timing = {
+    .LoadToActiveDelay = 2,
+    .ExitSelfRefreshDelay = 7,
+    .SelfRefreshTime = 4,
+    .RowCycleDelay = 7,
+    .WriteRecoveryTime = 2,
+    .RPDelay = 2,
+    .RCDDelay = 2
+  };
+  FMC_SDRAM_CommandTypeDef command = {
+    .CommandMode = FMC_SDRAM_CMD_CLK_ENABLE,
+    .CommandTarget = FMC_SDRAM_CMD_TARGET_BANK2,
+    .AutoRefreshNumber = 1,
+    .ModeRegisterDefinition = 0
+  };
 
-  /* Connect PEx pins to FMC Alternate function */
-  GPIOE->AFR[0]  = 0xC00CC0CC;
-  GPIOE->AFR[1]  = 0xCCCCCCCC;
-  /* Configure PEx pins in Alternate function mode */ 
-  GPIOE->MODER   = 0xAAAA828A;
-  /* Configure PEx pins speed to 100 MHz */ 
-  GPIOE->OSPEEDR = 0xFFFFC3CF;
-  /* Configure PEx pins Output type to push-pull */  
-  GPIOE->OTYPER  = 0x00000000;
-  /* No pull-up, pull-down for PEx pins */ 
-  GPIOE->PUPDR   = 0x00000000;
-  
-  /* Connect PFx pins to FMC Alternate function */
-  GPIOF->AFR[0]  = 0xCCCCCCCC;
-  GPIOF->AFR[1]  = 0xCCCCCCCC;
-  /* Configure PFx pins in Alternate function mode */   
-  GPIOF->MODER   = 0xAA800AAA;
-  /* Configure PFx pins speed to 50 MHz */ 
-  GPIOF->OSPEEDR = 0xAA800AAA;
-  /* Configure PFx pins Output type to push-pull */  
-  GPIOF->OTYPER  = 0x00000000;
-  /* No pull-up, pull-down for PFx pins */ 
-  GPIOF->PUPDR   = 0x00000000;
+  (void)FMC_SDRAM_Init(FMC_SDRAM_DEVICE, &sdram_init);
+  (void)FMC_SDRAM_Timing_Init(FMC_SDRAM_DEVICE, &sdram_timing,
+                              FMC_SDRAM_BANK2);
+  (void)FMC_SDRAM_SendCommand(FMC_SDRAM_DEVICE, &command, HAL_MAX_DELAY);
+  for (index = 0; index < 100000; index++) { }
 
-  /* Connect PGx pins to FMC Alternate function */
-  GPIOG->AFR[0]  = 0xCCCCCCCC;
-  GPIOG->AFR[1]  = 0xCCCCCCCC;
-  /* Configure PGx pins in Alternate function mode */ 
-  GPIOG->MODER   = 0xAAAAAAAA;
-  /* Configure PGx pins speed to 50 MHz */ 
-  GPIOG->OSPEEDR = 0xAAAAAAAA;
-  /* Configure PGx pins Output type to push-pull */  
-  GPIOG->OTYPER  = 0x00000000;
-  /* No pull-up, pull-down for PGx pins */ 
-  GPIOG->PUPDR   = 0x00000000;
-  
-  /* Connect PHx pins to FMC Alternate function */
-  GPIOH->AFR[0]  = 0x00C0CC00;
-  GPIOH->AFR[1]  = 0xCCCCCCCC;
-  /* Configure PHx pins in Alternate function mode */ 
-  GPIOH->MODER   = 0xAAAA08A0;
-  /* Configure PHx pins speed to 50 MHz */ 
-  GPIOH->OSPEEDR = 0xAAAA08A0;
-  /* Configure PHx pins Output type to push-pull */  
-  GPIOH->OTYPER  = 0x00000000;
-  /* No pull-up, pull-down for PHx pins */ 
-  GPIOH->PUPDR   = 0x00000000;
-  
-  /* Connect PIx pins to FMC Alternate function */
-  GPIOI->AFR[0]  = 0xCCCCCCCC;
-  GPIOI->AFR[1]  = 0x00000CC0;
+  command.CommandMode = FMC_SDRAM_CMD_PALL;
+  (void)FMC_SDRAM_SendCommand(FMC_SDRAM_DEVICE, &command, HAL_MAX_DELAY);
+  command.CommandMode = FMC_SDRAM_CMD_AUTOREFRESH_MODE;
+  command.AutoRefreshNumber = 2;
+  (void)FMC_SDRAM_SendCommand(FMC_SDRAM_DEVICE, &command, HAL_MAX_DELAY);
+  command.CommandMode = FMC_SDRAM_CMD_LOAD_MODE;
+  command.ModeRegisterDefinition = 0x0222;
+  (void)FMC_SDRAM_SendCommand(FMC_SDRAM_DEVICE, &command, HAL_MAX_DELAY);
+  (void)FMC_SDRAM_ProgramRefreshRate(FMC_SDRAM_DEVICE, 1386);
+  (void)FMC_SDRAM_WriteProtection_Disable(FMC_SDRAM_DEVICE,
+                                           FMC_SDRAM_BANK2);
   /* Configure PIx pins in Alternate function mode */ 
   GPIOI->MODER   = 0x0028AAAA;
   /* Configure PIx pins speed to 50 MHz */ 
@@ -476,6 +463,9 @@ void SystemInit_ExtMemCtl(void)
 #if defined (DATA_IN_ExtSDRAM)
   register uint32_t tmpreg = 0, timeout = 0xFFFF;
   register __IO uint32_t index;
+
+  Board_SDRAM_EarlyInit();
+  return;
 
 #if defined(STM32F446xx)
   /* Enable GPIOA, GPIOC, GPIOD, GPIOE, GPIOF, GPIOG interface
