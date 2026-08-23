@@ -53,6 +53,9 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   **175,700.609 Dhrystones/s, 0.556 DMIPS/MHz**.
 - `app/coremark_180m` — CoreMark with runtime data in SDRAM. Measured GCC:
   **194.246 iterations/s**, crcfinal `0x988c`.
+- `bare/spi_flash_test` and `app/spi_flash_test` — W25Q128FVSG erase/program/read
+  comparison using internal-SRAM versus SDRAM-resident buffers. Both report
+  JEDEC `0xEF4018` and pass verification; see their READMEs for measurements.
 
 ## Creating a project
 

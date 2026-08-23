@@ -105,6 +105,8 @@ SECTIONS
     __bss_start__ = _sbss;
     *(.bss)
     *(.bss*)
+    *(.sdram_test)
+    *(.sdram_test*)
     *(COMMON)
     . = ALIGN(4);
     _ebss = .;
