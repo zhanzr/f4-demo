@@ -56,6 +56,9 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
 - `bare/spi_flash_test` and `app/spi_flash_test` — W25Q128FVSG erase/program/read
   comparison using internal-SRAM versus SDRAM-resident buffers. Both report
   JEDEC `0xEF4018` and pass verification; see their READMEs for measurements.
+- `bare/ee_flash_test` and `app/ee_flash_test` — AT24C02 EEPROM erase/program/read
+  comparison using internal-SRAM versus SDRAM-resident buffers. Both pass
+  verification; see their READMEs for measurements.
 
 ## Creating a project
 
