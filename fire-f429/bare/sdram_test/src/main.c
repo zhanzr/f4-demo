@@ -23,7 +23,7 @@ static void NAND_Disable(void)
     HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11 | GPIO_PIN_12, GPIO_PIN_RESET);
 
     gpio.Mode = GPIO_MODE_OUTPUT_PP;
-    gpio.Pull = GPIO_PULLUP;
+    gpio.Pull = GPIO_NOPULL;
     gpio.Speed = GPIO_SPEED_FREQ_MEDIUM;
 
     gpio.Pin = GPIO_PIN_13;
@@ -51,7 +51,7 @@ void HAL_SDRAM_MspInit(SDRAM_HandleTypeDef *hsdram_handle)
     __HAL_RCC_FMC_CLK_ENABLE();
 
     gpio.Mode = GPIO_MODE_AF_PP;
-    gpio.Pull = GPIO_PULLUP;
+    gpio.Pull = GPIO_NOPULL;
     gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     gpio.Alternate = GPIO_AF12_FMC;
 
@@ -99,11 +99,11 @@ static HAL_StatusTypeDef SDRAM_Init(void)
     hsdram.Init.RowBitsNumber = FMC_SDRAM_ROW_BITS_NUM_12;
     hsdram.Init.MemoryDataWidth = FMC_SDRAM_MEM_BUS_WIDTH_16;
     hsdram.Init.InternalBankNumber = FMC_SDRAM_INTERN_BANKS_NUM_4;
-    hsdram.Init.CASLatency = FMC_SDRAM_CAS_LATENCY_3;
+    hsdram.Init.CASLatency = FMC_SDRAM_CAS_LATENCY_2;
     hsdram.Init.WriteProtection = FMC_SDRAM_WRITE_PROTECTION_DISABLE;
     hsdram.Init.SDClockPeriod = FMC_SDRAM_CLOCK_PERIOD_2;
-    hsdram.Init.ReadBurst = FMC_SDRAM_RBURST_DISABLE;
-    hsdram.Init.ReadPipeDelay = FMC_SDRAM_RPIPE_DELAY_1;
+    hsdram.Init.ReadBurst = FMC_SDRAM_RBURST_ENABLE;
+    hsdram.Init.ReadPipeDelay = FMC_SDRAM_RPIPE_DELAY_0;
 
     if (HAL_SDRAM_Init(&hsdram, &timing) != HAL_OK)
     {
@@ -126,7 +126,7 @@ static HAL_StatusTypeDef SDRAM_Init(void)
     }
 
     command.CommandMode = FMC_SDRAM_CMD_AUTOREFRESH_MODE;
-    command.AutoRefreshNumber = 4;
+    command.AutoRefreshNumber = 2;
     if (HAL_SDRAM_SendCommand(&hsdram, &command, 1000) != HAL_OK)
     {
         return HAL_ERROR;
@@ -134,7 +134,7 @@ static HAL_StatusTypeDef SDRAM_Init(void)
 
     command.CommandMode = FMC_SDRAM_CMD_LOAD_MODE;
     command.AutoRefreshNumber = 1;
-    command.ModeRegisterDefinition = 0x0230;
+    command.ModeRegisterDefinition = 0x0222;
     if (HAL_SDRAM_SendCommand(&hsdram, &command, 1000) != HAL_OK)
     {
         return HAL_ERROR;

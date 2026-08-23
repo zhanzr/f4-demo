@@ -15,8 +15,8 @@ Measured on fire-f429 hardware:
 
 | Operation | Cycles | Throughput |
 | --------- | ------ | ---------- |
-| Write     | 25,170,005  | 57.040 MiB/s |
-| Read      | 101,386,909 | 14.033 MiB/s |
+| Write     | 25,170,008 | 57.040 MiB/s |
+| Read      | 69,956,104 | 20.031 MiB/s |
 
 Hardware result: `PASS (0 errors)` on 2026-08-23.
 
