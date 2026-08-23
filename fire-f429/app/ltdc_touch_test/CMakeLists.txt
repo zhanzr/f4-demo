@@ -11,7 +11,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(STM32_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../../board/stm32f429_sdram.ld")
 
 add_executable(${PROJECT_NAME}.elf
-    ../../bare/ltdc_touch_test/src/main.c
+    src/main.c
     ../../board/board_ltdc.c
 )
 target_include_directories(${PROJECT_NAME}.elf PRIVATE ../../board)

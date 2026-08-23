@@ -1,43 +1,48 @@
-# LTDC 5-inch touch LCD test - fire-f429 (SDRAM app)
+# LTDC 5-inch touch LCD test - fire-f429
 
-SDRAM-remapped counterpart of `bare/ltdc_touch_test`. Same demo logic, same
-LTDC/touch drivers, same compiler flags; only the memory model differs.
+The single (SDRAM-based) demo for the on-board 5-inch 800x480 RGB888 touch
+LCD, modeled on the disco-F769 `lcd_touch_test_qspi` demo. The LCD always
+needs SDRAM for its framebuffer, so there is no bare (internal-SRAM) variant.
 
-Behavior:
+## Behavior (mirrors the F769 reference demo)
 
-- 8 colored squares bounce around the screen.
-- A green theme identifies this build (the bare build is blue).
-- Touch draws a white square with a green inner square; coordinates print on
-  the serial console.
-- FPS is measured over 2-second windows and printed on the console.
-- A green status band at the bottom of the screen identifies the build.
-
-Memory model: `SystemInit()` initializes SDRAM through the HAL before the C
-runtime; `.data`, `.bss`, heap **and** the LTDC framebuffer all live in the
-SDRAM `.sdram_fb` linker section (after `.data/.bss/heap`).
+- **Bouncing shapes**: 10 squares / circles / triangles bounce around the
+  animation area.
+- **Pure colors**: red/green/blue/yellow/cyan/magenta/white/black, one after
+  the other (prints `[LCD] pure color N`).
+- **Gradient**: full HSV hue sweep across the animation area.
+- **FPS + touch band**: a status band at the bottom shows `FPS:NNN | T:x,y`
+  using a 5x7 ASCII font, and the FPS is also printed on the serial console.
+- **Touch**: a white ring + green dot follows the finger; coordinates print
+  on the serial console (`Touch: X=.. Y=..` / `Touch: released`).
+- Startup shows a solid red full-screen frame for 3 s as an isolation check.
 
 ## Result (measured on hardware)
 
 | Metric | Value |
 | ------ | ----- |
-| Framebuffer | `0xD0001008` (linker-placed after .data/.bss/heap) |
-| FPS (800x480 RGB888, 8 shapes + band) | **37** |
-| Fill rate | ~1,152,000 pixels/s |
+| Framebuffer | `0xD0000F10` (linker-placed `.sdram_fb` in SDRAM) |
+| FPS (800x480 RGB888, shapes + band) | ~37 |
+| Touch PID | `0x3931` = "91" (GT911-family) |
+| Touch | working, coordinates verified |
 
-## Result comparison with `bare/ltdc_touch_test`
+## Memory model
 
-Both builds run at the same **37 FPS** with the same workload: no significant
-difference between the two project setups. The demo redraws the full screen
-with a CPU fill loop; the bottleneck is the CPU fill loop itself, not where
-in SDRAM the framebuffer lives. This contrasts with the CPU/SDRAM benchmarks
-(CoreMark/Dhrystone), where SDRAM-resident application data measurably slows
-compute because of read latency.
+`SystemInit()` initializes SDRAM through the HAL before the C runtime;
+`.data`, `.bss`, heap **and** the LTDC framebuffer all live in the SDRAM
+`.sdram_fb` linker section.
 
 ## Wiring
 
-Identical to `bare/ltdc_touch_test`; see its README. Note in particular the
-backlight (`LCD_BL = PD7`) and LCD enable (`DISP = PD4`) outputs, which must
-both be driven HIGH or the panel stays dark.
+- LTDC RGB888 data + HSYNC/VSYNC/DE/CLK, AF14/AF9 GPIO mapping.
+- Pixel clock from PLLSAI (N=420, R=6, DIVR=/8).
+- 5-inch panel timing: HBP=46 VBP=23 HSW=1 VSW=3 HFP=40 VFP=13.
+- Backlight: **LCD_BL = PD7** (GPIO HIGH = on).
+- LCD enable: **DISP = PD4** (GPIO HIGH = on).
+- Touch (GT911-family, 8-bit addr `0xBA`): **bit-banged I2C2** on PH4=SCL /
+  PH5=SDA (the STM32 hardware I2C is unreliable with Goodix controllers),
+  RST=PD11, INT=PD13. INT is held low during reset to select the `0xBA`
+  address. The 800x480 config is uploaded at startup (`Touch_LoadConfig`).
 
 ## Build and flash
 
