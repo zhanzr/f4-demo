@@ -27,6 +27,7 @@ extern "C" {
 #define HAL_SPI_MODULE_ENABLED
 #define HAL_I2C_MODULE_ENABLED
 #define HAL_LTDC_MODULE_ENABLED
+#define HAL_TIM_MODULE_ENABLED
 
 /* ########################## Oscillator Values ############################# */
 #define HSE_VALUE    ((uint32_t)25000000U) /*!< Value of the External oscillator in Hz. fire-f429: 25 MHz. */
@@ -106,6 +107,11 @@ void assert_failed(uint8_t *file, uint32_t line);
 #if defined(HAL_LTDC_MODULE_ENABLED)
   #include "stm32f4xx_hal_ltdc.h"
 #endif /* HAL_LTDC_MODULE_ENABLED */
+
+#if defined(HAL_TIM_MODULE_ENABLED)
+  #include "stm32f4xx_hal_tim.h"
+  #include "stm32f4xx_hal_tim_ex.h"
+#endif /* HAL_TIM_MODULE_ENABLED */
 
 #ifdef __cplusplus
 }

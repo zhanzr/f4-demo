@@ -63,6 +63,13 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   BCM43362) module over SDIO1, using the vendored WICED/WWD SDK in
   `drivers/wifi_ap6181`. Prints SSID / BSSID / RSSI / channel over USART1.
   Verified on hardware: sees the surrounding 2.4 GHz APs. See its README.
+- `app/wifi_connect` — joins the configured AP and prints the DHCP-assigned
+  IP over USART1. Credentials live in a gitignored `src/wifi_config.h`
+  (template `wifi_config.h.example`). Verified on hardware. See its README.
+- `app/capsense_buz_test` — capacitive touch pad (PA5, TIM2_CH1 input
+  capture) drives the active buzzer (PI11, NPN BJT, HIGH = ON) while
+  pressed, with a 500 ms minimum ON period. Verified on hardware. See its
+  README.
 
 ## Creating a project
 
