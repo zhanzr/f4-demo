@@ -1,0 +1,35 @@
+# FMC SDRAM init/read/write test for the fire-f429 board (STM32F429IGT6).
+# The test uses built-in flash/SRAM only; SDRAM is initialized at runtime and
+# accessed directly at its FMC bank-1 address (no linker remapping).
+
+cmake_minimum_required(VERSION 3.13)
+
+if(NOT CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/arm-none-eabi-toolchain.cmake")
+endif()
+
+project(sdram_test C ASM)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+add_executable(${PROJECT_NAME}.elf
+    src/main.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_sdram.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_fmc.c
+)
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f429_board.cmake)
+stm32f429_apply_board(${PROJECT_NAME}.elf "-O2")
+
+# Generate .hex/.bin and copy them next to the sources (where the flasher looks).
+add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O ihex ${PROJECT_NAME}.elf ${PROJECT_NAME}.hex
+    COMMAND ${CMAKE_OBJCOPY} -O binary ${PROJECT_NAME}.elf ${PROJECT_NAME}.bin
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_NAME}.hex ${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.hex
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_NAME}.bin ${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.bin
+    COMMAND ${CMAKE_SIZE} ${PROJECT_NAME}.elf
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMENT "objcopy -> .hex/.bin, size")
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/flash-targets.cmake)
