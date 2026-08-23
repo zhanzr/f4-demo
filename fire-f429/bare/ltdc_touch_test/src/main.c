@@ -76,6 +76,12 @@ int main(void)
     printf("LCD: 800x480 RGB888, FB at 0x%08lX\r\n",
            (unsigned long)LTDC_Display_FrameBuffer());
 
+    /* Isolation step: solid full-screen red, held for a few seconds, so it is
+     * easy to tell whether the panel (backlight + timing) is working at all. */
+    LTDC_Clear(0x00FF0000U);
+    printf("Solid RED screen shown for 5 s - is the panel visible?\r\n");
+    HAL_Delay(5000);
+
     while (1)
     {
         LTDC_Clear(THEME_BG);

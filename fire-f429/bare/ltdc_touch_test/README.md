@@ -41,6 +41,13 @@ SDRAM, which is why the two setups show no significant difference.
 - Pixel clock from PLLSAI (N=420, R=6, DIVR=/8).
 - 5-inch panel timing: HBP=46 VBP=23 HSW=1 VSW=3 HFP=40 VFP=13.
 - GT1151QM touch: I2C2 PH4=SCL PH5=SDA, RST=PD11, INT=PD13.
+- Backlight enable: **LCD_BL = PD7** (GPIO output, HIGH = on).
+- LCD enable: **DISP = PD4** (GPIO output, HIGH = on).
+
+> ⚠ Both PD7 (backlight) and PD4 (DISP) must be driven HIGH or the panel
+> stays dark even though the LTDC is running. The demo shows a solid red
+> full-screen frame for 5 seconds at startup to confirm the panel is alive
+> before starting the animation.
 
 ## Build and flash
 

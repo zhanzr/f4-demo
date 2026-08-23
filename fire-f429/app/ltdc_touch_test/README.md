@@ -35,7 +35,9 @@ compute because of read latency.
 
 ## Wiring
 
-Identical to `bare/ltdc_touch_test`; see its README.
+Identical to `bare/ltdc_touch_test`; see its README. Note in particular the
+backlight (`LCD_BL = PD7`) and LCD enable (`DISP = PD4`) outputs, which must
+both be driven HIGH or the panel stays dark.
 
 ## Build and flash
 

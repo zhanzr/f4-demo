@@ -97,6 +97,16 @@ static void LtdcGpioInit(void)
     HAL_GPIO_Init(GPIOB, &gpio);
     gpio.Pin = GPIO_PIN_10;                                   /* PG: G3 */
     HAL_GPIO_Init(GPIOG, &gpio);
+
+    /* LCD backlight (PD7) and LCD enable DISP (PD4): push-pull outputs
+     * pulled high. Without these the panel stays dark even with LTDC running. */
+    gpio.Mode = GPIO_MODE_OUTPUT_PP;
+    gpio.Pull = GPIO_PULLUP;
+    gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+    gpio.Alternate = 0U;
+    gpio.Pin = GPIO_PIN_7 | GPIO_PIN_4;
+    HAL_GPIO_Init(GPIOD, &gpio);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7 | GPIO_PIN_4, GPIO_PIN_SET);
 }
 
 void LTDC_Display_Init(void)
