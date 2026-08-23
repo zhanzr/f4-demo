@@ -1,11 +1,12 @@
 # fire-f429 / app — SDRAM-remapped projects
 
 This folder holds projects that use the onboard SDRAM as normal runtime memory.
-`blink_hello` reuses the bare blink + ADC sources, while its linker script puts
-`.data`, `.bss`, and the heap at `0xD0000000`. `SystemInit()` initializes FMC
-SDRAM through the HAL before the startup code copies `.data` and clears `.bss`.
-The HAL tick and SDRAM setup state remain in internal RAM until that
-initialization is complete.
+`board_hello` (renamed from `blink_hello`) reads the on-board sensors (DHT11,
+MPU6050, GL5516 light sensor, ADC internal channels), while its linker script
+puts `.data`, `.bss`, and the heap at `0xD0000000`. `SystemInit()`
+initializes FMC SDRAM through the HAL before the startup code copies `.data`
+and clears `.bss`. The HAL tick and SDRAM setup state remain in internal RAM
+until that initialization is complete.
 
 The benchmark apps use the same source files and flags as their bare SRAM
 counterparts. On hardware, SDRAM placement reduced Dhrystone from 391,198 to

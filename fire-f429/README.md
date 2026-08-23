@@ -44,11 +44,12 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
 - `bare/coremark_180m` — CoreMark 1.0.1, 10,000 iterations (GCC **or**
   armclang). Measured GCC: **470.2 iterations/s**, crcfinal `0x988c`. See its
   README.
-- `app/blink_hello` — the same blink + ADC demo with `.data`, `.bss`, and heap
-  located in onboard SDRAM. `SystemInit()` initializes SDRAM through the HAL
-  before the C runtime copies `.data` and clears `.bss`; the app prints linker
-  addresses to verify the placement. Bare projects leave `DATA_IN_ExtSDRAM`
-  undefined and keep their normal flash/SRAM layout.
+- `app/board_hello` — board self-test (renamed from `app/blink_hello`): LED
+  blink + ADC internal channels (VREFINT / temperature / VBAT), GL5516 light
+  sensor on PA4 (raw code + mV), DHT11 on PE2, MPU6050 6-axis on I2C1
+  (PB6/PB7). `.data`, `.bss`, and heap located in onboard SDRAM;
+  `SystemInit()` initializes SDRAM through the HAL before the C runtime
+  copies `.data` and clears `.bss`. Verified on hardware. See its README.
 - `app/dhry_180m` — Dhrystone with runtime data in SDRAM. Measured GCC:
   **175,700.609 Dhrystones/s, 0.556 DMIPS/MHz**.
 - `app/coremark_180m` — CoreMark with runtime data in SDRAM. Measured GCC:
