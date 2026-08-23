@@ -19,12 +19,14 @@
 #define COL_WHITE   0x00FFFFFFU
 #define COL_BLACK   0x00000000U
 #define COL_ORANGE  0x00FFA500U
-#define COL_GRAY    0x00808080U
 
 #define THEME_ACCENT COL_GREEN
 
-/* FPS: g_frames is incremented once per rendered animation frame;
- * status_update() redraws the on-screen FPS + touch line each second. */
+#define NUM_COLORS  8U
+#define NUM_GRADS   8U
+
+/* FPS: incremented once per rendered frame; status_update() redraws the
+ * on-screen FPS + touch line each second. */
 static volatile uint32_t g_frames;
 static uint32_t          g_last_frames;
 static uint32_t          g_fps_last_tick;
@@ -32,6 +34,14 @@ static uint32_t          g_fps_last_tick;
 static TouchPoint g_touch;
 static uint16_t    g_last_x = 0xFFFF;
 static uint16_t    g_last_y = 0xFFFF;
+
+/* Demo state machine (advances on a fresh touch press). */
+typedef enum { DEMO_MOVING, DEMO_COLOR, DEMO_GRADIENT } demo_state_t;
+static demo_state_t g_state = DEMO_MOVING;
+static uint32_t     g_color_idx = 0;
+static uint32_t     g_grad_idx = 0;
+
+/* ------------------------------------------------------------------ */
 
 static void paint_band(void)
 {
@@ -68,35 +78,41 @@ static void status_update(void)
     }
 }
 
-static void touch_poll(void)
+/* Draws the touch marker into the back buffer. */
+static void touch_marker(void)
 {
     uint16_t clamp_lo = 14;
     uint16_t clamp_hi_x = SCREEN_W - 1 - 13;
     uint16_t clamp_hi_y = SCREEN_H - 1 - 13;
 
+    if (!g_touch.pressed || (g_touch.x == 0U && g_touch.y == 0U))
+    {
+        return;
+    }
+
+    uint16_t x = g_touch.x;
+    uint16_t y = g_touch.y;
+    if (x < clamp_lo) x = clamp_lo;
+    if (y < clamp_lo) y = clamp_lo;
+    if (x > clamp_hi_x) x = clamp_hi_x;
+    if (y > clamp_hi_y) y = clamp_hi_y;
+
+    LTDC_FillCircle(x, y, 13, COL_WHITE);
+    LTDC_FillCircle(x, y, 8, THEME_ACCENT);
+
+    if (x != g_last_x || y != g_last_y)
+    {
+        printf("Touch: X=%u Y=%u\r\n", (unsigned)x, (unsigned)y);
+        g_last_x = x;
+        g_last_y = y;
+    }
+}
+
+static void touch_poll(void)
+{
     g_touch = Touch_Scan();
 
-    if (g_touch.pressed && (g_touch.x != 0U || g_touch.y != 0U))
-    {
-        uint16_t x = g_touch.x;
-        uint16_t y = g_touch.y;
-        if (x < clamp_lo) x = clamp_lo;
-        if (y < clamp_lo) y = clamp_lo;
-        if (x > clamp_hi_x) x = clamp_hi_x;
-        if (y > clamp_hi_y) y = clamp_hi_y;
-
-        if (x != g_last_x || y != g_last_y)
-        {
-            printf("Touch: X=%u Y=%u\r\n", (unsigned)x, (unsigned)y);
-            g_last_x = x;
-            g_last_y = y;
-        }
-
-        /* white ring + colored dot so the marker is visible on any background */
-        LTDC_FillCircle(x, y, 13, COL_WHITE);
-        LTDC_FillCircle(x, y, 8, THEME_ACCENT);
-    }
-    else if (g_last_x != 0xFFFF)
+    if (!g_touch.pressed && g_last_x != 0xFFFF)
     {
         printf("Touch: released\r\n");
         g_last_x = 0xFFFF;
@@ -104,15 +120,30 @@ static void touch_poll(void)
     }
 }
 
-static void delay_with_overlay(uint32_t ms)
+/* Returns 1 on a fresh press edge (released -> pressed). */
+static int TouchPressedEdge(void)
 {
-    uint32_t start = HAL_GetTick();
-    do
+    static int prev = 0;
+    int now = g_touch.pressed ? 1 : 0;
+    int edge = (now && !prev) ? 1 : 0;
+    prev = now;
+    return edge;
+}
+
+static void state_label(void)
+{
+    char buf[24];
+    switch (g_state)
     {
-        touch_poll();
-        status_update();
-        HAL_Delay(20);
-    } while (HAL_GetTick() - start < ms);
+    case DEMO_MOVING:   snprintf(buf, sizeof(buf), "MOVE - tap"); break;
+    case DEMO_COLOR:    snprintf(buf, sizeof(buf), "COL %lu/%lu - tap",
+                                 (unsigned long)(g_color_idx + 1U),
+                                 (unsigned long)NUM_COLORS); break;
+    default:            snprintf(buf, sizeof(buf), "GRAD %lu/%lu - tap",
+                                 (unsigned long)(g_grad_idx + 1U),
+                                 (unsigned long)NUM_GRADS); break;
+    }
+    band_text(buf);
 }
 
 /* ------------------------------------------------------------------ */
@@ -186,49 +217,9 @@ static void step_shape(shape_t *s)
     if (s->y + r > ANIM_H - 1)   { s->y = ANIM_H - 1 - r;  s->vy = -s->vy; }
 }
 
-static void shapes_demo(uint32_t ms)
-{
-    enum { N = 10 };
-    shape_t shapes[N];
-    init_shapes(shapes, N);
-
-    paint_band();
-
-    uint32_t start = HAL_GetTick();
-    do
-    {
-        LTDC_FillRect(0, 0, SCREEN_W, ANIM_H, BACK_COLOR);
-        for (int i = 0; i < N; i++)
-        {
-            step_shape(&shapes[i]);
-            draw_shape(&shapes[i]);
-        }
-        g_frames++;
-        touch_poll();
-        status_update();
-    } while (HAL_GetTick() - start < ms);
-}
-
 /* ------------------------------------------------------------------ */
-/* Pure colors, one after the other.                                  */
-static void colors_demo(uint32_t ms_per_color)
-{
-    static const uint32_t colors[] = {
-        COL_RED, COL_GREEN, COL_BLUE, COL_YELLOW,
-        COL_CYAN, COL_MAGENTA, COL_WHITE, COL_BLACK,
-    };
+/* HSV helper for gradients.                                          */
 
-    for (unsigned i = 0; i < sizeof(colors) / sizeof(colors[0]); i++)
-    {
-        LTDC_Clear(colors[i]);
-        paint_band();
-        printf("[LCD] pure color %u\r\n", (unsigned)i + 1);
-        delay_with_overlay(ms_per_color);
-    }
-}
-
-/* ------------------------------------------------------------------ */
-/* Animated gradient: hue sweeps the full color wheel.                */
 static uint32_t hsv_to_rgb888(int h, int s, int v)
 {
     int region = (h / 600) % 6;
@@ -249,33 +240,6 @@ static uint32_t hsv_to_rgb888(int h, int s, int v)
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
-static void gradient_demo(uint32_t ms)
-{
-    paint_band();
-
-    uint32_t start = HAL_GetTick();
-    uint32_t t = 0;
-    do
-    {
-        int hue_a = (int)(t * 3600 / ms);
-        int hue_b = hue_a + 1800;
-        if (hue_b >= 3600) hue_b -= 3600;
-
-        for (int y = 0; y < ANIM_H; y++)
-        {
-            int frac = y * 1000 / ANIM_H;
-            int hue  = hue_a + (hue_b - hue_a) * frac / 1000;
-            LTDC_FillRect(0, (uint16_t)y, SCREEN_W, 1, hsv_to_rgb888(hue, 255, 255));
-        }
-
-        g_frames++;
-        touch_poll();
-        status_update();
-        HAL_Delay(16);
-        t = HAL_GetTick() - start;
-    } while (t < ms);
-}
-
 /* ------------------------------------------------------------------ */
 
 int main(void)
@@ -288,9 +252,8 @@ int main(void)
     Touch_Init();
 
     printf("\r\n==== fire-f429 LTDC touch test ====\r\n");
-    printf("LCD: %ux%u RGB888, FB at 0x%08lX\r\n",
-           (unsigned)SCREEN_W, (unsigned)SCREEN_H,
-           (unsigned long)LTDC_Display_FrameBuffer());
+    printf("LCD: %ux%u RGB888, double buffered\r\n",
+           (unsigned)SCREEN_W, (unsigned)SCREEN_H);
 
     if (Touch_ReadVersion(touch_version))
     {
@@ -305,16 +268,97 @@ int main(void)
         printf("Touch: no ACK on bit-banged I2C2 (PH4/PH5)\r\n");
     }
 
-    /* Isolation step: solid full-screen red for a few seconds. */
-    LTDC_Clear(COL_RED);
-    printf("Solid RED screen shown for 3 s\r\n");
-    HAL_Delay(3000);
+    printf("Touch-driven demo: tap the screen to advance\r\n");
+    printf("  moving -> colors -> gradients -> moving ...\r\n");
+
+    enum { N = 10 };
+    static shape_t shapes[N];
+    init_shapes(shapes, N);
 
     while (1)
     {
-        shapes_demo(12000);
-        colors_demo(1200);
-        gradient_demo(6000);
-        shapes_demo(12000);
+        /* Poll touch + draw marker into the back buffer before the swap. */
+        touch_poll();
+        int fresh = TouchPressedEdge();
+
+        /* Render the current state into the back buffer. */
+        switch (g_state)
+        {
+        case DEMO_MOVING:
+        {
+            LTDC_FillRect(0, 0, SCREEN_W, ANIM_H, BACK_COLOR);
+            for (int i = 0; i < N; i++)
+            {
+                step_shape(&shapes[i]);
+                draw_shape(&shapes[i]);
+            }
+            if (fresh)
+            {
+                g_state = DEMO_COLOR;
+                g_color_idx = 0;
+                printf("[LCD] moving -> pure colors\r\n");
+            }
+            break;
+        }
+
+        case DEMO_COLOR:
+        {
+            static const uint32_t colors[] = {
+                COL_RED, COL_GREEN, COL_BLUE, COL_YELLOW,
+                COL_CYAN, COL_MAGENTA, COL_WHITE, COL_BLACK,
+            };
+            LTDC_FillRect(0, 0, SCREEN_W, ANIM_H, colors[g_color_idx]);
+            if (fresh)
+            {
+                printf("[LCD] pure color %lu\r\n",
+                       (unsigned long)(g_color_idx + 1U));
+                g_color_idx++;
+                if (g_color_idx >= NUM_COLORS)
+                {
+                    g_state = DEMO_GRADIENT;
+                    g_grad_idx = 0;
+                    printf("[LCD] colors -> gradients\r\n");
+                }
+            }
+            break;
+        }
+
+        default: /* DEMO_GRADIENT */
+        {
+            int hue_a = (int)(g_grad_idx * 3600 / (int)NUM_GRADS);
+            int hue_b = hue_a + 1800;
+            if (hue_b >= 3600) hue_b -= 3600;
+
+            for (int y = 0; y < ANIM_H; y++)
+            {
+                int frac = y * 1000 / ANIM_H;
+                int hue  = hue_a + (hue_b - hue_a) * frac / 1000;
+                LTDC_FillRect(0, (uint16_t)y, SCREEN_W, 1,
+                              hsv_to_rgb888(hue, 255, 255));
+            }
+            if (fresh)
+            {
+                printf("[LCD] gradient %lu\r\n",
+                       (unsigned long)(g_grad_idx + 1U));
+                g_grad_idx++;
+                if (g_grad_idx >= NUM_GRADS)
+                {
+                    g_state = DEMO_MOVING;
+                    printf("[LCD] gradients -> moving\r\n");
+                }
+            }
+            break;
+        }
+        }
+
+        /* Status band (drawn over the back buffer), then swap. */
+        paint_band();
+        state_label();
+        touch_marker();
+        g_frames++;
+        status_update();
+        LTDC_Display_Swap();
+
+        HAL_Delay(16);   /* pace to ~60 fps */
     }
 }

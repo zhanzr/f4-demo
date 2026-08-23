@@ -4,32 +4,44 @@ The single (SDRAM-based) demo for the on-board 5-inch 800x480 RGB888 touch
 LCD, modeled on the disco-F769 `lcd_touch_test_qspi` demo. The LCD always
 needs SDRAM for its framebuffer, so there is no bare (internal-SRAM) variant.
 
-## Behavior (mirrors the F769 reference demo)
+## Touch-driven state machine
 
-- **Bouncing shapes**: 10 squares / circles / triangles bounce around the
-  animation area.
-- **Pure colors**: red/green/blue/yellow/cyan/magenta/white/black, one after
-  the other (prints `[LCD] pure color N`).
-- **Gradient**: full HSV hue sweep across the animation area.
-- **FPS + touch band**: a status band at the bottom shows `FPS:NNN | T:x,y`
-  using a 5x7 ASCII font, and the FPS is also printed on the serial console.
-- **Touch**: a white ring + green dot follows the finger; coordinates print
-  on the serial console (`Touch: X=.. Y=..` / `Touch: released`).
-- Startup shows a solid red full-screen frame for 3 s as an isolation check.
+The demo advances through stages with a tap on the screen:
+
+```
+moving objects -> pure colors 1..8 -> gradients 1..8 -> moving objects ...
+```
+
+- **Moving objects**: 10 squares / circles / triangles bounce around.
+- **Pure colors**: red/green/blue/yellow/cyan/magenta/white/black.
+- **Gradients**: 8 static HSV hue-sweep patterns.
+- The status band shows the current stage (`MOVE - tap`, `COL n/8 - tap`,
+  `GRAD n/8 - tap`) plus `FPS:NNN | T:x,y` in a 5x7 ASCII font.
+- A white ring + green dot follows the finger; coordinates print on the
+  serial console.
+
+## Double buffering
+
+The moving-object stage (and every stage) renders into a **back buffer** and
+then flips the LTDC layer frame-buffer address at the next vertical blanking
+interval (`HAL_LTDC_SetAddress_NoReload` + `HAL_LTDC_Reload(VBLANK)`). This
+eliminates the flicker/tearing of drawing directly into the displayed buffer.
+Both 800x480 RGB888 buffers (2 x 1.125 MiB) live in the `.sdram_fb` section.
 
 ## Result (measured on hardware)
 
 | Metric | Value |
 | ------ | ----- |
-| Framebuffer | `0xD0000F10` (linker-placed `.sdram_fb` in SDRAM) |
-| FPS (800x480 RGB888, shapes + band) | ~37 |
+| Framebuffers | `0xD0001040` .. `0xD0233840` (2 x linker-placed) |
+| Rendering | double buffered, vsync swap |
+| FPS | ~60 (16 ms per frame) |
 | Touch PID | `0x3931` = "91" (GT911-family) |
-| Touch | working, coordinates verified |
+| Touch | working, state machine driven by taps |
 
 ## Memory model
 
 `SystemInit()` initializes SDRAM through the HAL before the C runtime;
-`.data`, `.bss`, heap **and** the LTDC framebuffer all live in the SDRAM
+`.data`, `.bss`, heap **and** the LTDC framebuffers all live in the SDRAM
 `.sdram_fb` linker section.
 
 ## Wiring

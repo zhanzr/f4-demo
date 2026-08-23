@@ -2,6 +2,7 @@
 #include "board.h"
 #include "stm32f4xx_hal_ltdc.h"
 #include "stm32f4xx_hal_i2c.h"
+#include <stdio.h>
 
 void Board_SDRAM_EarlyInit(void);
 
@@ -179,14 +180,35 @@ static int TouchI2CWriteBuffer(uint16_t reg, const uint8_t *buf, uint16_t len)
     return 0;
 }
 
-/* Framebuffer: 800x480 RGB888 = 1.125 MiB, placed by the linker in the
- * `.sdram_fb` SDRAM section for both bare and app builds. */
-__attribute__((section(".sdram_fb"))) static uint8_t frame_buffer[LCD_WIDTH * LCD_HEIGHT * 3U];
-#define FRAME_BUFFER_ADDRESS ((uint32_t)(uintptr_t)frame_buffer)
+/* Framebuffers: 800x480 RGB888 each = 1.125 MiB, placed by the linker in the
+ * `.sdram_fb` SDRAM section. Double buffering: the LTDC displays one buffer
+ * while the CPU renders into the other; LTDC_Display_Swap() flips them at
+ * vertical blanking to avoid tearing/flicker. */
+__attribute__((section(".sdram_fb"))) static uint8_t frame_buffers[2][LCD_WIDTH * LCD_HEIGHT * 3U];
+
+static uint32_t front_addr;   /* buffer currently displayed by the LTDC */
+static uint32_t back_addr;    /* buffer the CPU renders into */
 
 uint32_t LTDC_Display_FrameBuffer(void)
 {
-    return FRAME_BUFFER_ADDRESS;
+    return front_addr;
+}
+
+uint32_t LTDC_Display_BackBuffer(void)
+{
+    return back_addr;
+}
+
+/* Flip the display to the freshly rendered back buffer at the next vertical
+ * blanking interval, then exchange front/back roles. */
+void LTDC_Display_Swap(void)
+{
+    (void)HAL_LTDC_SetAddress_NoReload(&hltdc, back_addr, LTDC_LAYER_1);
+    (void)HAL_LTDC_Reload(&hltdc, LTDC_RELOAD_VERTICAL_BLANKING);
+
+    uint32_t tmp = front_addr;
+    front_addr = back_addr;
+    back_addr = tmp;
 }
 
 static void LtdcGpioInit(void)
@@ -273,6 +295,9 @@ void LTDC_Display_Init(void)
     Board_SDRAM_EarlyInit();
 #endif
 
+    front_addr = (uint32_t)(uintptr_t)frame_buffers[0];
+    back_addr = (uint32_t)(uintptr_t)frame_buffers[1];
+
     LtdcGpioInit();
 
     /* Pixel clock ~9 MHz: PLLSAI N=420, R=6, DIVR=8. */
@@ -327,6 +352,8 @@ void LTDC_Display_Init(void)
     }
 
     LTDC_Clear(0x000000U);
+    LTDC_Display_Swap();
+    LTDC_Clear(0x000000U);
 }
 
 void LTDC_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint32_t color)
@@ -336,7 +363,8 @@ void LTDC_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint32_t colo
         return;
     }
 
-    volatile uint8_t *fb = (volatile uint8_t *)(uintptr_t)FRAME_BUFFER_ADDRESS;
+    /* Render into the back buffer (double buffering). */
+    volatile uint8_t *fb = (volatile uint8_t *)(uintptr_t)back_addr;
     uint8_t red = (uint8_t)(color >> 16);
     uint8_t green = (uint8_t)(color >> 8);
     uint8_t blue = (uint8_t)color;
@@ -595,30 +623,30 @@ int Touch_ReadVersion(uint8_t version[4])
     return TouchI2CReadReg16(TOUCH_REG_VERSION, version, 4U) == 0;
 }
 
-/* GT911 configuration for the 5-inch 800x480 panel (vendor CTP_CFG_GT911).
- * Bytes 1..4 already carry X_MAX=800, Y_MAX=480. */
+/* GT911 configuration for the 800x480 panel (vendor CTP_CFG_GT911, the
+ * default `#if 1` variant). Bytes 1..4 carry X_MAX=800, Y_MAX=480. */
 #define GT911_CFG_REG   0x8047U
 #define GT911_CFG_LEN   186U
 static const uint8_t gt911_config[GT911_CFG_LEN] = {
-    0x00,0x20,0x03,0xE0,0x01,0x05,0x0D,0x00,0x01,0x08,
-    0x28,0x0F,0x50,0x32,0x03,0x05,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x8A,0x2A,0x0C,
-    0x45,0x47,0x0C,0x08,0x00,0x00,0x00,0x02,0x02,0x2D,
-    0x00,0x00,0x00,0x00,0x00,0x03,0x64,0x32,0x00,0x00,
-    0x00,0x28,0x64,0x94,0xC5,0x02,0x07,0x00,0x00,0x04,
-    0x9C,0x2C,0x00,0x8F,0x34,0x00,0x84,0x3F,0x00,0x7C,
-    0x4C,0x00,0x77,0x5B,0x00,0x77,0x00,0x00,0x00,0x00,
+    0x41,0x20,0x03,0xE0,0x01,0x05,0x3D,0x00,0x01,0x08,
+    0x1E,0x05,0x3C,0x3C,0x03,0x05,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x1A,0x1C,0x1E,0x14,0x8A,0x2A,0x0C,
+    0x2A,0x28,0xEB,0x04,0x00,0x00,0x01,0x61,0x03,0x2C,
+    0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x14,0x3C,0x94,0xC5,0x02,0x08,0x00,0x00,0x04,
+    0xB7,0x16,0x00,0x9F,0x1B,0x00,0x8B,0x22,0x00,0x7B,
+    0x2B,0x00,0x70,0x36,0x00,0x70,0x00,0x00,0x00,0x00,
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
     0x00,0x00,0x18,0x16,0x14,0x12,0x10,0x0E,0x0C,0x0A,
     0x08,0x06,0x04,0x02,0xFF,0xFF,0x00,0x00,0x00,0x00,
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x16,0x18,0x1C,0x1D,0x1E,0x1F,0x20,0x21,
-    0x22,0x24,0x13,0x12,0x10,0x0F,0x0A,0x08,0x06,0x04,
+    0x00,0x00,0x24,0x22,0x21,0x20,0x1F,0x1E,0x1D,0x1C,
+    0x18,0x16,0x13,0x12,0x10,0x0F,0x0A,0x08,0x06,0x04,
     0x02,0x00,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x00,0x00,
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x24,0x01
+    0x00,0x00,0x00,0x00,0x0A,0x00
 };
 
 /* Uploads the GT911 800x480 config and requests the chip to apply it.
@@ -641,7 +669,7 @@ int Touch_LoadConfig(void)
     buffer[GT911_CFG_LEN + 1] = 1U;   /* refresh flag */
 
     int rc = TouchI2CWriteBuffer(GT911_CFG_REG, buffer, GT911_CFG_LEN + 2U);
-    HAL_Delay(10U);
+    HAL_Delay(100U);
     return rc;
 }
 
@@ -686,33 +714,35 @@ int Touch_Probe(int int_high)
 TouchPoint Touch_Scan(void)
 {
     TouchPoint point = {0, 0, 0};
-    uint8_t status = 0;
-    uint8_t data[8] = {0};
+    uint8_t buf[12] = {0};
 
-    if (TouchI2CReadReg16(TOUCH_REG_STATUS, &status, 1U) != 0)
+    /* Vendor-exact read: one burst from 0x814E. buf[0] = status (buffer
+     * ready bit7 + touch count bits3:0); coordinates for point i start at
+     * buf[1 + i*8]: [0]=track id, [1]=x_lo, [2]=x_hi, [3]=y_lo, [4]=y_hi. */
+    if (TouchI2CReadReg16(TOUCH_REG_STATUS, buf, sizeof(buf)) != 0)
     {
         return point;
     }
 
-    if ((status & 0x80U) == 0U)
+    uint8_t finger = buf[0];
+    if (finger == 0x00U || (finger & 0x80U) == 0U)
     {
         return point;
     }
 
-    if (TouchI2CReadReg16(TOUCH_REG_DATA, data, sizeof(data)) != 0)
+    uint8_t touch_num = finger & 0x0FU;
+    if (touch_num > 5U)
     {
-        return point;
+        touch_num = 5U;
     }
+
+    const uint8_t *coor = &buf[1];
+    point.pressed = touch_num;
+    point.x = (uint16_t)(coor[1] | ((uint16_t)coor[2] << 8));
+    point.y = (uint16_t)(coor[3] | ((uint16_t)coor[4] << 8));
 
     /* Clear the status register's buffer-ready bit. */
     (void)TouchI2CWriteReg16(TOUCH_REG_STATUS, 0U);
-
-    point.pressed = status & 0x0FU;
-    if (data[0] & 0x80U)   /* point 1 valid flag */
-    {
-        point.x = (uint16_t)(((uint16_t)data[1] << 8) | data[2]);
-        point.y = (uint16_t)(((uint16_t)data[3] << 8) | data[4]);
-    }
 
     if (point.x >= LCD_WIDTH)
     {
@@ -723,4 +753,31 @@ TouchPoint Touch_Scan(void)
         point.y = LCD_HEIGHT - 1U;
     }
     return point;
+}
+
+/* Diagnostic: dump the touch status/coordinate registers and the first bytes
+ * of the config area (0x8047) so we can see what the GT911 actually reports. */
+void Touch_DumpRegisters(void)
+{
+    uint8_t raw[12] = {0};
+    uint8_t cfg[10] = {0};
+
+    if (TouchI2CReadReg16(TOUCH_REG_STATUS, raw, sizeof(raw)) == 0)
+    {
+        printf("touch raw: st=0x%02X  P1: %02X %02X %02X %02X %02X  "
+               "P2: %02X %02X %02X %02X\r\n",
+               raw[0], raw[1], raw[2], raw[3], raw[4], raw[5],
+               raw[6], raw[7], raw[8], raw[9]);
+    }
+    else
+    {
+        printf("touch raw: read failed\r\n");
+    }
+
+    if (TouchI2CReadReg16(GT911_CFG_REG, cfg, sizeof(cfg)) == 0)
+    {
+        printf("cfg 0x8047: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
+               cfg[0], cfg[1], cfg[2], cfg[3], cfg[4],
+               cfg[5], cfg[6], cfg[7], cfg[8], cfg[9]);
+    }
 }
