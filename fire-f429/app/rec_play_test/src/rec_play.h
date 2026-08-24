@@ -26,10 +26,25 @@ uint32_t RecPlay_RecordedChunks(void);
 int      RecPlay_RecordDone(void);
 int      RecPlay_PlayDone(void);
 
-/* DMA callbacks (wired to the stream handles; invoked from the DMA ISRs). */
-void RecPlay_DMA_Callback(DMA_HandleTypeDef *hdma);   /* RX during record   */
-void RecPlay_DMA_Silence(DMA_HandleTypeDef *hdma);    /* TX during record   */
-void RecPlay_DMA_Prefetch(DMA_HandleTypeDef *hdma);   /* TX during play     */
+/* Light reset (flags + codec) after playback - no diagnostics dump. */
+void     RecPlay_Reset(void);
+
+/* Playback progress and latched DMA error (0 = none). */
+uint32_t RecPlay_PlayAired(void);
+uint32_t RecPlay_LastError(void);
+
+/* Debug helper: print amplitude stats + sample dumps of the recording. */
+void RecPlay_DumpRecording(uint32_t chunks);
+
+/* DMA callbacks (wired to the stream handles; invoked from the DMA ISRs).
+ * XferCpltCallback fires when M0 finished; XferM1CpltCallback when M1
+ * finished - the HAL dispatches on the CT bit, so the callbacks themselves
+ * identify which buffer is complete. */
+void RecPlay_DMA_Callback(DMA_HandleTypeDef *hdma);   /* RX M0 (chunk0)    */
+void RecPlay_DMA_M1(DMA_HandleTypeDef *hdma);         /* RX M1 (chunk1)    */
+void RecPlay_DMA_Silence(DMA_HandleTypeDef *hdma);    /* TX during record  */
+void RecPlay_DMA_Prefetch(DMA_HandleTypeDef *hdma);   /* TX M0 during play */
+void RecPlay_DMA_PrefetchM1(DMA_HandleTypeDef *hdma); /* TX M1 during play */
 void RecPlay_DMA_Error(DMA_HandleTypeDef *hdma);
 
 /* Handle accessors for the DMA ISR shims in main.c. */

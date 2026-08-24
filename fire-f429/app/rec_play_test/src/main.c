@@ -24,8 +24,9 @@
 #include "rec_play.h"
 #include "wm8978.h"
 
-#define REC_MS   30000U   /* record duration                    */
+#define REC_MS   15000U   /* record duration                    */
 #define POLL_MS  20U      /* main-loop poll period              */
+#define STALL_MS 15000U   /* engine stuck watchdog (>> session) */
 
 typedef enum
 {
@@ -45,6 +46,23 @@ static const char *state_name(App_State s)
         case ST_PLAYING:     return "PLAYING";
         default:             return "?";
     }
+}
+
+/* Watchdog helper for RECORDING/PLAYING: if the engine makes no progress
+ * (same chunk counter) for STALL_MS, force the session closed so the board
+ * always returns to a waiting state instead of hanging with the LED on. */
+static int engine_stalled(uint32_t now, uint32_t progress)
+{
+    static uint32_t last_progress = 0xFFFFFFFFU;
+    static uint32_t stall_since   = 0;
+
+    if (progress != last_progress)
+    {
+        last_progress = progress;
+        stall_since   = now;
+        return 0;
+    }
+    return (now - stall_since) >= STALL_MS;
 }
 
 /* Print a state change on the UART console. */
@@ -73,7 +91,11 @@ int main(void)
     }
     if (WM8978_Init() != 1)
     {
-        printf("rec_play_test: WM8978 init error\r\n");
+        printf("rec_play_test: WM8978 NOT on the I2C bus (check wiring!)\r\n");
+    }
+    else
+    {
+        printf("wm8978: present\r\n");
     }
     RecPlay_Init();
 
@@ -134,8 +156,17 @@ int main(void)
                         /* Degenerate (empty) recording: stay recordable. */
                         state_goto(&state, ST_WAIT_RECORD);
                     }
-                }
-                break;
+                }                else if (engine_stalled(HAL_GetTick(),
+                                        RecPlay_RecordedChunks()))
+                {
+                    printf("rec: ENGINE STALLED (err=%08lx), forcing stop\r\n",
+                           (unsigned long)RecPlay_LastError());
+                    rec_chunks = RecPlay_StopRecord();
+                    state_goto(&state,
+                               (rec_chunks > 0U) ? ST_WAIT_PLAY
+                                                  : ST_WAIT_RECORD);
+                    LED_1_OFF();
+                }                break;
 
             case ST_WAIT_PLAY:
                 if (press_event)
@@ -152,10 +183,21 @@ int main(void)
                 /* Presses during playback are ignored. */
                 if (RecPlay_PlayDone())
                 {
-                    (void)RecPlay_StopRecord();  /* engine + codec to idle */
+                    (void)RecPlay_Reset();          /* engine + codec idle */
                     state_goto(&state, ST_WAIT_RECORD);
                     LED_1_OFF();
                     printf("play: done\r\n");
+                }
+                else if (engine_stalled(HAL_GetTick(),
+                                        RecPlay_PlayAired()))
+                {
+                    printf("play: ENGINE STALLED (err=%08lx, aired=%lu), "
+                           "forcing stop\r\n",
+                           (unsigned long)RecPlay_LastError(),
+                           (unsigned long)RecPlay_PlayAired());
+                    (void)RecPlay_Reset();
+                    state_goto(&state, ST_WAIT_RECORD);
+                    LED_1_OFF();
                 }
                 break;
 

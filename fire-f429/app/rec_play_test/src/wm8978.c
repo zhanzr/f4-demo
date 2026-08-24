@@ -32,7 +32,7 @@ static uint16_t wm8978_reg[58] = {
 
 /* --- I2C plumbing --------------------------------------------------------- */
 
-static void Codec_I2C_Init(void)
+static HAL_StatusTypeDef Codec_I2C_Init(void)
 {
     GPIO_InitTypeDef gpio = {0};
 
@@ -54,7 +54,7 @@ static void Codec_I2C_Init(void)
     codec_i2c.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
     codec_i2c.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
     codec_i2c.Init.NoStretchMode   = I2C_NOSTRETCH_DISABLE;
-    HAL_I2C_Init(&codec_i2c);
+    return HAL_I2C_Init(&codec_i2c);
 }
 
 /* WM8978 control word: 9-bit register value, B8..B1 = reg addr, B0 = MSB. */
@@ -72,7 +72,16 @@ static void WM8978_WriteReg(uint8_t reg, uint16_t val)
 /* Init I2C and reset the codec. Returns 1 on success. */
 int WM8978_Init(void)
 {
-    Codec_I2C_Init();
+    if (Codec_I2C_Init() != HAL_OK)
+    {
+        return 0;
+    }
+    /* The WM8978 has no read-back; probe the bus by polling the address. */
+    if (HAL_I2C_IsDeviceReady(&codec_i2c, WM8978_SLAVE_ADDRESS, 3U,
+                              WM8978_I2C_TIMEOUT) != HAL_OK)
+    {
+        return 0;                     /* no ACK: codec not on the bus */
+    }
     return WM8978_Reset();
 }
 
@@ -139,7 +148,9 @@ void WM8978_CfgAudioPath(uint16_t in_path, uint16_t out_path)
     if (in_path & MIC_LEFT_ON)  reg |= (1U << 1) | (1U << 0);
     WM8978_WriteReg(44, reg);
 
-    /* R14: ADC control (HPF on, audio mode) */
+    /* R14: ADC control - exactly the vendor example value: HPF disabled,
+     * audio mode, 128x oversampling (best performance). DC is removed
+     * digitally per chunk in RecPlay_PostProcess() instead. */
     WM8978_WriteReg(14, (in_path & ADC_ON) ? ((1U << 3) | 4U) : 0U);
 
     /* R32..R34: automatic level control off */
