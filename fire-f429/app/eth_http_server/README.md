@@ -51,7 +51,9 @@ POST /api/leds         body {"leds":[0]}  -> applies to the LED
 GET  /api/adc          {"vrefint_mv":..,"temp_c":..,"vbat_v":..,
                         "motion_x":..,"motion_y":..,"motion_z":..,
                         "dht11_t":..,"dht11_h":..,"ts":..}
-GET  /api/camera       {"source":"dvi","ready":0,"ts":..}  (placeholder)
+GET  /api/camera       {"source":"ov5640","ready":1,"w":320,"h":240,"ts":..}
+GET  /stream           live MJPEG (multipart/x-mixed-replace, QVGA 320x240)
+GET  /capture          one JPEG frame (image/jpeg, Content-Length)
 GET  /api/info         {"arch","lan_ip","public_ip":null,"geo":null,
                         "weather":null}
 GET  /public/<name>    raw image bytes (from the embedded_files[] table)
@@ -59,6 +61,39 @@ GET  /public/<name>    raw image bytes (from the embedded_files[] table)
 
 The `public_ip` / `geo` / `weather` fields are `null` (the page shows "N/A")
 because the board has no HTTP/TLS client.
+
+## Camera (OV5640 MJPEG)
+
+The on-board **OV5640** module streams JPEG over the web:
+
+- **SCCB** control on I2C1 (PB6/PB7 - shared with the MPU6050/EEPROM, the
+  driver probes the sensor ID 0x56 so the devices coexist).
+- **DCMI** data bus: HSYNC PA4, PIXCLK PA6, VSYNC PI5, D0..D7 on
+  PH9/PH10/PH11/PH12/PH14, PD3, PI6, PI7. PWDN on PG3, RST on PG2
+  (the 挑战者 F429 core board wires RST to PG2 - the F429IG-V1V2 example's
+  PB5 must not be used here).
+- The sensor is configured for **QVGA (320x240) JPEG** output. The key
+  registers: `0x3821` bit5 (COMPRESSION ENABLE / JPEG enable - this is the
+  one that actually turns the JPEG encoder on), `0x4713` (JPEG mode select),
+  `0x4300/0x501f` (YUV422 input to the encoder). The config is applied in
+  three tables (vendor base + JPEG format + QVGA timing) with a retry loop
+  that power-cycles the module until real JPEG frames flow (the module's
+  24 MHz crystal start-up is occasionally slow).
+- DCMI runs in **JPEG mode** with DMA2 Stream1 (circular) into a 128 KB
+  internal-SRAM ring (`.sram_dma`). `OV5640_GetJpegFrame()` scans the ring
+  for complete frames (`FF D8 FF ... FF D9`, minimum length) and returns the
+  last one; `http_stream_poll()` (called from the main loop) pushes them to
+  the active `/stream` client, and `/capture` serves one frame with
+  `Content-Length`.
+- Transient DCMI sync errors are cleared in the IRQ handler (the HAL would
+  otherwise abort the DMA); a 2 s NDTR stall watchdog restarts the capture.
+
+Boot console (camera):
+
+```
+OV5640: ready (QVGA 320x240 JPEG)
+OV5640: selftest OK - N JPEG frames, last MB bytes, F fps
+```
 
 ## Web assets
 
@@ -101,7 +136,9 @@ If DHCP times out it falls back to the static IP in `src/main.h`
 - `src/app_ethernet.c/h` - netif config + DHCP state machine + link periodic;
   starts the HTTP listener once the IP is assigned
 - `src/http_server.c/h` - raw-API HTTP server (`http_server_hw_init` at boot,
-  `http_server_start` after DHCP)
+  `http_server_start` after DHCP; `/stream` + `/capture` MJPEG)
+- `src/ov5640.c/h` - OV5640 driver (SCCB, JPEG QVGA config, DCMI+DMA ring,
+  frame extraction, boot self-test)
 - `src/lwipopts.h` - lwIP NO_SYS configuration
 - `src/main.h` - MAC address + static fallback IP
 - `src/arch/cc.h` - lwIP compiler/arch config (NO_SYS)

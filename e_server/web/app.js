@@ -251,14 +251,47 @@ window.addEventListener('resize', redrawAll);
 
 /* ---------------------------- Tab 3: Camera ------------------------------ */
 
+const camImg = document.getElementById('camera-img');
+const camPh = document.getElementById('camera-placeholder');
+let camStreaming = false;
+
+function camShowImg(show) {
+  camImg.style.display = show ? 'block' : 'none';
+  camPh.style.display = show ? 'none' : 'block';
+}
+
+function camStart() {
+  camShowImg(true);
+  /* The MJPEG stream auto-updates: pointing src at /stream keeps it live. */
+  camImg.src = '/stream?' + Date.now();
+  camStreaming = true;
+  setStatus('camera-status', 'streaming', 'ok');
+}
+
+function camStop() {
+  camImg.removeAttribute('src');
+  camStreaming = false;
+  setStatus('camera-status', 'stream stopped', '');
+}
+
+document.getElementById('cam-stream').addEventListener('click', () => {
+  if (camStreaming) { camStop(); } else { camStart(); }
+});
+document.getElementById('cam-snapshot').addEventListener('click', () => {
+  camImg.src = '/capture?' + Date.now();
+  camShowImg(true);
+  setStatus('camera-status', 'snapshot', 'ok');
+});
+
 async function loadCamera() {
-  setStatus('camera-status', 'querying DVI source…', '');
+  setStatus('camera-status', 'querying camera…', '');
   try {
     const j = await getJSON('/api/camera');
     if (j.ready) {
-      setStatus('camera-status', 'DVI feed ready', 'ok');
+      setStatus('camera-status',
+                'OV5640 ready (' + (j.w || '?') + 'x' + (j.h || '?') + ')', 'ok');
     } else {
-      setStatus('camera-status', 'DVI source not ready yet', '');
+      setStatus('camera-status', 'OV5640 not ready', 'err');
     }
   } catch (e) {
     setStatus('camera-status', 'camera backend unavailable', 'err');

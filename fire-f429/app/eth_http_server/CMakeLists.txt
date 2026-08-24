@@ -47,6 +47,7 @@ add_executable(${PROJECT_NAME}.elf
     src/ethernetif.c
     src/lan8720a.c
     src/http_server.c
+    src/ov5640.c
     ../board_hello/src/adc_internal.c
     ../board_hello/src/dht11.c
     ../board_hello/src/mpu6050.c

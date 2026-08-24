@@ -73,8 +73,10 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   `e_server/public` at build time. See its README.
 - `app/eth_http_server` — same e_server site + JSON API over **wired
   Ethernet** (on-board LAN8720A PHY, RMII, lwIP NO_SYS raw API, DHCP).
-  Verified: LAN8720A PHY OK (ID 0007:c0f1), server listening on :80. See
-  its README.
+  Also serves a **live OV5640 camera MJPEG stream** (`/stream`,
+  `/capture`, QVGA 320x240 JPEG via DCMI+DMA). Verified:
+  LAN8720A PHY OK (ID 0007:c0f1), camera detected on SCCB and streaming
+  JPEG frames. See its README.
 - `app/capsense_buz_test` — capacitive touch pad (PA5, TIM2_CH1 input
   capture) drives the active buzzer (PI11, NPN BJT, HIGH = ON) while
   pressed, with a 500 ms minimum ON period. Verified on hardware. See its

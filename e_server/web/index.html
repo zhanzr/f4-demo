@@ -81,12 +81,17 @@
     </div>
   </section>
 
-  <!-- Tab 3: Camera (future DVI feed) -->
+  <!-- Tab 3: Camera (OV5640 MJPEG stream) -->
   <section id="tab-camera" class="panel">
     <h2>Camera</h2>
-    <p>Camera feed will come from the DVI interface in a future build.</p>
+    <p>Live MJPEG stream from the on-board OV5640 (QVGA 320x240).</p>
     <div id="camera-box" class="camera-box">
-      <span>DVI camera feed &mdash; coming soon</span>
+      <img id="camera-img" alt="OV5640 stream" style="display:none">
+      <span id="camera-placeholder">waiting for the camera feed&hellip;</span>
+    </div>
+    <div class="row">
+      <button id="cam-stream" class="btn">Start stream</button>
+      <button id="cam-snapshot" class="btn">Snapshot</button>
     </div>
     <p id="camera-status" class="status"></p>
   </section>

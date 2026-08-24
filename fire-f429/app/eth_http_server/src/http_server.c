@@ -31,6 +31,7 @@
 #include "lwip/opt.h"
 #include "lwip/tcp.h"
 #include "lwip/mem.h"
+#include "lwip/timeouts.h"
 #include "lwip/ip_addr.h"
 #include "lwip/netif.h"
 #include "http_server.h"
@@ -39,6 +40,7 @@
 #include "adc_internal.h"
 #include "dht11.h"
 #include "mpu6050.h"
+#include "ov5640.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -114,7 +116,14 @@ static void sensors_init(void)
 {
     ADC_Internal_Init();
     DHT11_Init();
-    (void)MPU6050_Init();   /* best-effort; the API reports 0s if absent */
+    if (MPU6050_Init())
+    {
+        printf("MPU6050: ready (I2C1)\r\n");
+    }
+    else
+    {
+        printf("MPU6050: not detected (I2C1)\r\n");
+    }
 }
 
 /* --------------------------------------------------------------------------
@@ -326,14 +335,168 @@ static void api_adc(struct http_conn *c)
   http_reply_json(c, body);
 }
 
-/* Placeholder for the future DVI camera feed (matches e_server). */
+/* GET /api/camera: OV5640 status (matches e_server). */
 static void api_camera(struct http_conn *c)
 {
   char body[96];
   int n = snprintf(body, sizeof(body),
-                   "{\"source\":\"dvi\",\"ready\":0,\"ts\":%lu}",
-                   (unsigned long)HAL_GetTick());
+                   "{\"source\":\"ov5640\",\"ready\":%d,"
+                   "\"w\":320,\"h\":240,\"ts\":%lu}",
+                   OV5640_Ready() ? 1 : 0, (unsigned long)HAL_GetTick());
   http_reply_json(c, body);
+}
+
+/* --------------------------------------------------------------------------
+ * MJPEG stream (multipart/x-mixed-replace).
+ * ------------------------------------------------------------------------ */
+#define STREAM_BOUNDARY  "firef429mjpeg"
+
+static struct tcp_pcb *g_stream_pcb;   /* active MJPEG stream, or NULL */
+
+static void stream_close(void)
+{
+  if (g_stream_pcb)
+  {
+    tcp_arg(g_stream_pcb, NULL);
+    tcp_recv(g_stream_pcb, NULL);
+    tcp_sent(g_stream_pcb, NULL);
+    tcp_err(g_stream_pcb, NULL);
+    tcp_close(g_stream_pcb);
+    g_stream_pcb = NULL;
+  }
+}
+
+static err_t stream_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
+{
+  (void)arg;
+  if (err != ERR_OK) return ERR_OK;
+  if (p == NULL)
+  {
+    stream_close();   /* client went away */
+    return ERR_OK;
+  }
+  tcp_recved(pcb, p->tot_len);
+  pbuf_free(p);
+  return ERR_OK;
+}
+
+static void stream_err(void *arg, err_t err)
+{
+  (void)arg;
+  (void)err;
+  g_stream_pcb = NULL;
+}
+
+/* GET /stream: convert this connection into the live MJPEG stream. */
+static void api_stream(struct http_conn *c)
+{
+  struct tcp_pcb *pcb = c->pcb;
+  char hdr[192];
+  int hn;
+
+  if (!OV5640_Ready())
+  {
+    http_reply_err(c, 503, "Service Unavailable");
+    return;
+  }
+  if (g_stream_pcb != NULL)
+  {
+    http_reply_err(c, 503, "Service Unavailable");   /* one stream only */
+    return;
+  }
+
+  /* Detach the http_conn bookkeeping; we manage the pcb directly now. */
+  tcp_arg(pcb, NULL);
+  tcp_recv(pcb, stream_recv);
+  tcp_sent(pcb, NULL);
+  tcp_err(pcb, stream_err);
+  mem_free(c);
+
+  hn = snprintf(hdr, sizeof(hdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: multipart/x-mixed-replace; boundary=%s\r\n"
+                "Cache-Control: no-store\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "--%s\r\n", STREAM_BOUNDARY, STREAM_BOUNDARY);
+  tcp_write(pcb, hdr, (u16_t)hn, TCP_WRITE_FLAG_COPY);
+
+  g_stream_pcb = pcb;
+  tcp_output(pcb);
+}
+
+/* GET /capture: a single JPEG frame. */
+static void api_capture(struct http_conn *c)
+{
+  const uint8_t *frame;
+  uint32_t len = 0;
+
+  if (OV5640_Ready())
+  {
+    /* Wait briefly for a complete frame (a few frame periods). */
+    uint32_t t0 = HAL_GetTick();
+    while (len == 0 && (HAL_GetTick() - t0) < 2000U)
+    {
+      len = OV5640_GetJpegFrame(&frame);
+      if (len == 0) sys_check_timeouts();
+    }
+  }
+
+  if (len == 0)
+  {
+    http_reply_err(c, 503, "Service Unavailable");
+    return;
+  }
+
+  /* Serve the frame directly from the ring. */
+  int n = snprintf(c->resp, sizeof(c->resp),
+                   "HTTP/1.1 200 OK\r\n"
+                   "Content-Type: image/jpeg\r\n"
+                   "Content-Length: %lu\r\n"
+                   "Cache-Control: no-store\r\n"
+                   "Connection: close\r\n"
+                   "\r\n",
+                   (unsigned long)len);
+  c->hdr_len = (size_t)n;
+  c->body_ptr = frame;
+  c->body_len = len;
+  /* body_static = 0: conn_send uses TCP_WRITE_FLAG_COPY so the frame is
+   * copied into the lwIP send buffer immediately - the ring is DMA-
+   * overwritten, so we must not reference it while the TCP send is
+   * in flight. */
+  c->body_static = 0;
+  c->total_off = 0;
+  c->done = 0;
+  conn_send(c);
+  if (c->done) http_conn_close(c);
+}
+
+/* Feed the active MJPEG stream from the main loop (drop frames if the
+ * send buffer is full - the browser just shows the latest). */
+void http_stream_poll(void)
+{
+  const uint8_t *frame;
+  uint32_t len;
+  char part[64];
+  int pn;
+
+  if (g_stream_pcb == NULL || !OV5640_Ready()) return;
+
+  len = OV5640_GetJpegFrame(&frame);
+  if (len == 0) return;
+
+  /* Only send if the whole part fits, so the buffer never fills. */
+  if ((uint32_t)tcp_sndbuf(g_stream_pcb) < len + 80U) return;
+
+  pn = snprintf(part, sizeof(part),
+                "Content-Type: image/jpeg\r\nContent-Length: %lu\r\n\r\n",
+                (unsigned long)len);
+  tcp_write(g_stream_pcb, part, (u16_t)pn, TCP_WRITE_FLAG_COPY);
+  tcp_write(g_stream_pcb, frame, (u16_t)len, TCP_WRITE_FLAG_COPY);
+  tcp_write(g_stream_pcb, "\r\n--" STREAM_BOUNDARY "\r\n",
+            (u16_t)(sizeof("\r\n--" STREAM_BOUNDARY "\r\n") - 1),
+            TCP_WRITE_FLAG_COPY);
+  tcp_output(g_stream_pcb);
 }
 
 static void api_info(struct http_conn *c)
@@ -397,6 +560,14 @@ static void process_request(struct http_conn *c)
   else if (strcmp(path, "/api/camera") == 0)
   {
     api_camera(c);
+  }
+  else if (strcmp(path, "/stream") == 0)
+  {
+    api_stream(c);
+  }
+  else if (strcmp(path, "/capture") == 0)
+  {
+    api_capture(c);
   }
   else if (strcmp(path, "/api/info") == 0)
   {
@@ -521,11 +692,27 @@ static err_t http_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
  *   has an IP (DHCP bound or static fallback) - the DHCP state machine in
  *   app_ethernet.c invokes it.
  * ------------------------------------------------------------------------ */
+/* Boot-time camera check: waits ~2.5 s for DCMI/DMA to deliver JPEG
+ * frames and reports frame size/rate. No network needed. */
+static void camera_selftest(void)
+{
+  OV5640_Selftest();
+}
+
 void http_server_hw_init(void)
 {
   leds_init();
   led_set(0, 0);
   sensors_init();
+  if (OV5640_Init() == 0)
+  {
+    printf("OV5640: ready (QVGA 320x240 JPEG)\r\n");
+    camera_selftest();
+  }
+  else
+  {
+    printf("OV5640: not detected (check SCCB/camera)\r\n");
+  }
 }
 
 void http_server_start(void)

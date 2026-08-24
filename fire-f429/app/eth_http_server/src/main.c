@@ -77,6 +77,7 @@ int main(void)
     {
         ethernetif_input(&gnetif);        /* poll RX */
         sys_check_timeouts();             /* lwIP timers */
+        http_stream_poll();               /* MJPEG stream frames */
 #if LWIP_NETIF_LINK_CALLBACK
         Ethernet_Link_Periodic_Handle(&gnetif);
 #endif

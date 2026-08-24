@@ -12,4 +12,7 @@ void http_server_hw_init(void);
  * Call ONLY after the netif has an IP (DHCP bound or static fallback). */
 void http_server_start(void);
 
+/* Feed the active MJPEG stream (call from the main loop). */
+void http_stream_poll(void);
+
 #endif /* __HTTP_SERVER_H__ */

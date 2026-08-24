@@ -53,7 +53,7 @@
 #define MEMP_NUM_UDP_PCB        6
 #define MEMP_NUM_TCP_PCB        10
 #define MEMP_NUM_TCP_PCB_LISTEN 5
-#define MEMP_NUM_TCP_SEG        8
+#define MEMP_NUM_TCP_SEG        96   /* >= TCP_SND_QUEUELEN for 64KB sndbuf */
 #define MEMP_NUM_SYS_TIMEOUT    10
 
 /* ---------- Pbuf options ---------- */
@@ -68,7 +68,9 @@
 #define TCP_TTL                 255
 #define TCP_QUEUE_OOSEQ         0
 #define TCP_MSS                 (1500 - 40)
-#define TCP_SND_BUF             (4*TCP_MSS)
+/* Large send buffer so a full QVGA JPEG frame + MJPEG part header fits in
+ * one tcp_write burst (frames are typically 20-60 KB). */
+#define TCP_SND_BUF             (64*1024)
 #define TCP_SND_QUEUELEN        (2* TCP_SND_BUF/TCP_MSS)
 #define TCP_WND                 (2*TCP_MSS)
 
