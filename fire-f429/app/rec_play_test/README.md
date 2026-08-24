@@ -1,0 +1,72 @@
+# Record & playback test - fire-f429 (app)
+
+Capsense-driven microphone **record & playback** with the on-board **WM8978**
+audio codec. The recorded PCM stays **in RAM** (the 8 MB onboard SDRAM) - no
+SD card, no FatFs, no WAV headers.
+
+Ported from the Wildfire (野火) F429 example
+`37-I2S_audio/I2S_record_play`, simplified.
+
+## Behavior
+
+1. **Press the capacitive pad (PA5)** → the board records **30 s** of MIC
+   audio (44.1 kHz / 16-bit / stereo, ~5.3 MB) into the SDRAM buffer. The
+   **PD12 LED (LED_1)** is **ON** while recording and turns **OFF** when the
+   recording stops by itself.
+2. **Press the pad again** (LED off) → the board **plays the recording**
+   back; the LED is **ON** during playback and turns **OFF** afterwards.
+   Pressing again replays, overwriting nothing (the same recording loops
+   until you start a new one by... it plays what was last recorded; press -
+   play - press - play ...).
+
+## Hardware
+
+| Function          | Pin  | Note                                        |
+| ----------------- | ---- | ------------------------------------------- |
+| Capsense pad      | PA5  | TIM2_CH1 input capture (AF1)                |
+| Record LED        | PD12 | LED_1, low-active                           |
+| Codec control     | PB6/PB7 | I2C1, 400 kHz (WM8978 @ 7-bit 0x34)      |
+| I2S2 WS (LRC)     | PB12 | AF5                                         |
+| I2S2 BCLK         | PD3  | AF5                                         |
+| I2S2 DACDAT       | PI3  | AF5                                         |
+| I2S2 MCLK         | PC6  | AF5                                         |
+| I2S2ext ADCDAT    | PC2  | AF6                                         |
+
+DMA: **TX** = DMA1 Stream4 Channel0 (`SPI2_TX`), **RX** = DMA1 Stream3
+Channel3 (`I2S2ext_RX`), both double-buffered.
+
+## Implementation notes
+
+- **Format**: 44100 Hz, 16-bit, stereo. 30 s = 2,646,000 u16 frames
+  (~5.3 MB) in `pcm_buffer[]` (.bss → SDRAM via `stm32f429_sdram.ld`).
+- **Engine**: I2S2 runs as the full-duplex master. Both DMA streams run as
+  **20 ms chunks** (1764 frames) ping-ponging between two internal-SRAM
+  buffers (`.sram_dma`; DMA1 cannot reach the external SDRAM). On every
+  transfer-complete:
+  - *record*: the just-filled chunk is copied into the next slot of
+    `pcm_buffer[]`;
+  - *play*: the next chunk of `pcm_buffer[]` is prefetched into the freed
+    ping-pong buffer.
+  One 7 KB copy every 20 ms is negligible for the 180 MHz core.
+- **Full-duplex quirk**: `I2S2ext` only shifts while the I2S2 master
+  transmits, so during recording the TX DMA streams a zero-filled dummy
+  buffer (digital silence to the DAC) to keep the clocks running.
+- **Clocking**: PLLI2S = HSE 25 MHz /M(25) ×N(271) /R(6) ≈ 45.17 MHz →
+  MCLK = 44100 × 256 exactly.
+- **Codec paths**:
+  - record: `MIC_LEFT|MIC_RIGHT|ADC_ON` → earphone monitor, MIC gain 50;
+  - play: `DAC_ON` → earphone, volume 40.
+- **ISR-safety**: the engine stops itself from the DMA ISR using register
+  writes only (`HAL_DMA_Abort` is avoided - it polls `HAL_GetTick()` for its
+  timeout, which can never expire inside a DMA ISR since SysTick cannot
+  preempt it).
+
+## Build and flash
+
+```bash
+cmake -G Ninja -B build .
+ninja -C build
+ninja -C build flash
+```
+
+Serial console: USART1 115200 (COM36).

@@ -25,6 +25,7 @@ extern "C" {
 #define HAL_DMA_MODULE_ENABLED
 #define HAL_SDRAM_MODULE_ENABLED
 #define HAL_SPI_MODULE_ENABLED
+#define HAL_I2S_MODULE_ENABLED
 #define HAL_I2C_MODULE_ENABLED
 #define HAL_LTDC_MODULE_ENABLED
 #define HAL_TIM_MODULE_ENABLED
@@ -99,6 +100,10 @@ void assert_failed(uint8_t *file, uint32_t line);
 #if defined(HAL_SPI_MODULE_ENABLED)
   #include "stm32f4xx_hal_spi.h"
 #endif /* HAL_SPI_MODULE_ENABLED */
+
+#if defined(HAL_I2S_MODULE_ENABLED)
+  #include "stm32f4xx_hal_i2s.h"
+#endif /* HAL_I2S_MODULE_ENABLED */
 
 #if defined(HAL_I2C_MODULE_ENABLED)
   #include "stm32f4xx_hal_i2c.h"

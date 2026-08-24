@@ -71,6 +71,10 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   capture) drives the active buzzer (PI11, NPN BJT, HIGH = ON) while
   pressed, with a 500 ms minimum ON period. Verified on hardware. See its
   README.
+- `app/rec_play_test` — capsense-driven 30 s microphone **record & playback**
+  with the WM8978 codec on full-duplex I2S2 (44.1 kHz / 16-bit / stereo);
+  the PCM stays in the onboard SDRAM (no SD card/FatFs). The PD12 LED is on
+  while recording/playing. See its README.
 
 ## Creating a project
 
