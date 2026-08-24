@@ -255,10 +255,10 @@ static uint32_t Engine_Stop(void)
  * Returns immediately; the DMA callbacks walk the buffer chunk by chunk. */
 void RecPlay_StartRecord(void)
 {
-    /* Codec: MICs -> ADC -> I2S; earphones monitor the analogue MIC mix. */
+    /* Codec: MICs -> ADC -> I2S only. All analogue outputs stay OFF so
+     * nothing is monitored while recording (silent record). */
     WM8978_Reset();
-    WM8978_CfgAudioPath(MIC_LEFT_ON | MIC_RIGHT_ON | ADC_ON,
-                        EAR_LEFT_ON | EAR_RIGHT_ON);
+    WM8978_CfgAudioPath(MIC_LEFT_ON | MIC_RIGHT_ON | ADC_ON, OUT_PATH_OFF);
     WM8978_SetMicGain(50U);
     WM8978_CfgAudioIF();
 

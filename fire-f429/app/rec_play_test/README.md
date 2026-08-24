@@ -9,8 +9,10 @@ Ported from the Wildfire (野火) F429 example
 
 ## Behavior
 
-A simple 4-state machine; presses during recording/playing are ignored
-until the action completes. Every state change is printed on the console:
+A simple 4-state machine. A **"press"** is a completed **down-then-up** pad
+contact (the event fires on release); presses during recording/playing are
+ignored — only the action completing (30 s recorded / samples played out)
+advances the state. Every state change is printed on the console:
 
 ```
    WAIT_RECORD --press--> RECORDING --30 s done--> WAIT_PLAY --press--> PLAYING
@@ -21,11 +23,15 @@ until the action completes. Every state change is printed on the console:
 1. **Power-on** → `WAIT_RECORD`.
 2. **Press** → `RECORDING`: records **30 s** of MIC audio (44.1 kHz /
    16-bit / stereo, ~5.3 MB) into the SDRAM buffer, **PD12 LED ON**.
-   Presses during the 30 s are ignored.
-3. Recording completes → LED **OFF**, state `WAIT_PLAY`.
-4. **Press** → `PLAYING`: plays the recording back, **PD12 LED ON**.
-   Presses during playback are ignored; when it completes, LED **OFF**
-   and back to `WAIT_RECORD`.
+   Recording is **silent** (no output monitoring) and the pad is ignored.
+3. Recording completes → LED **OFF**, state `WAIT_PLAY` (no playback here,
+   the board just waits).
+4. **Press** → `PLAYING`: plays until the recorded samples run out, with the
+   **PD12 LED ON**. The pad is ignored; only "samples ran out" returns to
+   `WAIT_RECORD`.
+
+If the pad is still held down when an action ends, that press is swallowed
+(released without effect) so it cannot immediately re-trigger the next one.
 
 Console trace of a full cycle:
 
@@ -76,7 +82,8 @@ Channel3 (`I2S2ext_RX`), both double-buffered.
 - **Clocking**: PLLI2S = HSE 25 MHz /M(25) ×N(271) /R(6) ≈ 45.17 MHz →
   MCLK = 44100 × 256 exactly.
 - **Codec paths**:
-  - record: `MIC_LEFT|MIC_RIGHT|ADC_ON` → earphone monitor, MIC gain 50;
+  - record: `MIC_LEFT|MIC_RIGHT|ADC_ON`, outputs off (silent record),
+    MIC gain 50;
   - play: `DAC_ON` → earphone, volume 40.
 - **ISR-safety**: the engine stops itself from the DMA ISR using register
   writes only (`HAL_DMA_Abort` is avoided - it polls `HAL_GetTick()` for its

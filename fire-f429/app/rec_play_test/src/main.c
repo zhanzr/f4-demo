@@ -2,15 +2,18 @@
  * rec_play_test - capacitive touch pad (PA5) driven record & playback test
  * for the fire-f429 board (WM8978 codec on full-duplex I2S2, PCM in RAM).
  *
- * State machine (a capsense press = rising edge; presses during
- * recording/playing are ignored until the action completes):
+ * State machine (a "press" = pad down then up, i.e. fires on release;
+ * presses during recording/playing are ignored until the action completes):
  *
  *   WAIT_RECORD --press--> RECORDING --30 s done--> WAIT_PLAY --press--> PLAYING
  *        ^                                                                        |
  *        +---------------------------- play done --------------------------------+
  *
- * The PD12 LED (LED_1) is ON in RECORDING and PLAYING, OFF while waiting.
- * Every state change is printed on the UART console as "[state] A -> B".
+ * - RECORDING: 30 s of MIC audio into the SDRAM buffer, PD12 LED ON.
+ *   Nothing is monitored on the outputs (silent record); the pad is ignored.
+ * - PLAYING:   plays until the recorded samples run out, PD12 LED ON.
+ *   The pad is ignored; only "samples ran out" returns to WAIT_RECORD.
+ * - Every state change is printed on the UART console as "[state] A -> B".
  *
  * No SD card / no FatFs: the PCM stays in the 8 MB onboard SDRAM
  * (~5.3 MB for 30 s of 44.1 kHz 16-bit stereo).
@@ -56,7 +59,9 @@ int main(void)
 {
     uint32_t   rec_chunks = 0;      /* length of the last recording (chunks) */
     App_State  state      = ST_WAIT_RECORD;
-    int        prev_pressed;
+    int        prev_pressed = 0;    /* raw pad level last poll               */
+    int        swallow     = 0;     /* eat a press held across a boundary    */
+    int        press_event;
 
     HAL_Init();
     Board_Init();              /* 180 MHz, LEDs, USART1 console, SDRAM    */
@@ -78,15 +83,34 @@ int main(void)
     printf("[state] power-on -> %s\r\n", state_name(state));
 
     prev_pressed = 0;
+    swallow      = 0;
     while (1)
     {
         int pressed = CapSense_Scan();
+
+        /* A "press" is a completed down-then-up cycle: the event fires on
+         * the release edge (a release can only follow a press-down). */
+        press_event = (!pressed && prev_pressed) ? 1 : 0;
+
+        /* During RECORDING / PLAYING the pad is ignored. If it is down when
+         * the action ends, that in-progress press must not count: swallow
+         * everything until the pad has been released once. */
+        if ((state == ST_RECORDING) || (state == ST_PLAYING))
+        {
+            if (pressed) { swallow = 1; }
+            press_event = 0;
+        }
+        else if (swallow)
+        {
+            if (!pressed) { swallow = 0; }   /* release seen: press consumed */
+            press_event = 0;
+        }
 
         /* Fire only the transition belonging to the current state. */
         switch (state)
         {
             case ST_WAIT_RECORD:
-                if (pressed && !prev_pressed)
+                if (press_event)
                 {
                     state_goto(&state, ST_RECORDING);
                     printf("rec: start, %u ms (LED on)\r\n", (unsigned)REC_MS);
@@ -114,7 +138,7 @@ int main(void)
                 break;
 
             case ST_WAIT_PLAY:
-                if (pressed && !prev_pressed)
+                if (press_event)
                 {
                     state_goto(&state, ST_PLAYING);
                     printf("play: start, %u ms (LED on)\r\n",
