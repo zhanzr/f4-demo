@@ -9,15 +9,37 @@ Ported from the Wildfire (野火) F429 example
 
 ## Behavior
 
-1. **Press the capacitive pad (PA5)** → the board records **30 s** of MIC
-   audio (44.1 kHz / 16-bit / stereo, ~5.3 MB) into the SDRAM buffer. The
-   **PD12 LED (LED_1)** is **ON** while recording and turns **OFF** when the
-   recording stops by itself.
-2. **Press the pad again** (LED off) → the board **plays the recording**
-   back; the LED is **ON** during playback and turns **OFF** afterwards.
-   Pressing again replays, overwriting nothing (the same recording loops
-   until you start a new one by... it plays what was last recorded; press -
-   play - press - play ...).
+A simple 4-state machine; presses during recording/playing are ignored
+until the action completes. Every state change is printed on the console:
+
+```
+   WAIT_RECORD --press--> RECORDING --30 s done--> WAIT_PLAY --press--> PLAYING
+        ^                                                                        |
+        +---------------------------- play done --------------------------------+
+```
+
+1. **Power-on** → `WAIT_RECORD`.
+2. **Press** → `RECORDING`: records **30 s** of MIC audio (44.1 kHz /
+   16-bit / stereo, ~5.3 MB) into the SDRAM buffer, **PD12 LED ON**.
+   Presses during the 30 s are ignored.
+3. Recording completes → LED **OFF**, state `WAIT_PLAY`.
+4. **Press** → `PLAYING`: plays the recording back, **PD12 LED ON**.
+   Presses during playback are ignored; when it completes, LED **OFF**
+   and back to `WAIT_RECORD`.
+
+Console trace of a full cycle:
+
+```
+[state] power-on -> WAIT_RECORD
+[state] WAIT_RECORD -> RECORDING
+rec: start, 30000 ms (LED on)
+rec: done, 1500 chunks (30000 ms)
+[state] RECORDING -> WAIT_PLAY
+[state] WAIT_PLAY -> PLAYING
+play: start, 30000 ms (LED on)
+play: done
+[state] PLAYING -> WAIT_RECORD
+```
 
 ## Hardware
 
