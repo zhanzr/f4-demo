@@ -45,6 +45,13 @@ uint32_t OV5640_GetJpegFrame(const uint8_t **frame);
 /* True once the camera is initialized and frames are flowing. */
 int OV5640_Ready(void);
 
+/* Total JPEG frames found since boot (for status polling). */
+uint32_t OV5640_FrameCount(void);
+
+/* Health watchdog: if the sensor goes quiet (no frame for a while),
+ * power-cycle + reconfigure it. Call periodically from the main loop. */
+void OV5640_HealthCheck(void);
+
 /* Boot-time diagnostic: waits ~2.5 s, reports DCMI frame events, JPEG
  * frames found, and ring content (prints to the debug UART). */
 void OV5640_Selftest(void);

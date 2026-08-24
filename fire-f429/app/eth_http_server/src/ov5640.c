@@ -147,8 +147,8 @@ static const uint16_t ov5640_base_jpeg[][2] = {
     {0x3103, 0x03},  /* system clock from PLL */
     {0x3017, 0xff},  /* FREX, Vsync, HREF, PCLK, D[9:6] output enable */
     {0x3018, 0xff},  /* D[5:0], GPIO[1:0] output enable */
-    {0x3034, 0x1a},  /* MIPI 10-bit */
-    {0x3037, 0x13},  /* PLL root divider, pre-divider */
+    {0x3034, 0x1a},  /* MIPI 10-bit, PCLK /2.5 */
+    {0x3037, 0x13},  /* PLL pre-divider (3) */
     {0x3108, 0x01},  /* PCLK root divider */
     {0x4713, 0x02},  /* jpg mode select */
     {0x3630, 0x36}, {0x3631, 0x0e}, {0x3632, 0xe2}, {0x3633, 0x12},
@@ -215,20 +215,29 @@ static const uint16_t ov5640_base_jpeg[][2] = {
 
 
 /* JPEG format enable: switch the sensor output to the JPEG encoder.
- * Key registers (OV5640 reference manual 6.1.7):
+ * Key registers (OV5640 reference manual 6.1.7 + proven h750-mini driver):
  *   0x3821 bit5  - JPEG enable (COMPRESSION ENABLE)
- *   0x4713       - JPEG mode select (default 0x02 = JPEG mode 2)
+ *   0x4713       - JPEG mode select (mode 2)
  *   0x4300/0x501f- YUV422 input to the encoder
- *   0x3002/0x3006/0x471c - clock enables / dividers (esp32 fmt_jpeg) */
+ *   0x3002      - VFIFO/JFIFO/JPG block enables (0x00 = JPEG)
+ *   0x3006      - JPG clock enables
+ *   0x4600      - JPEG fixed line count enable
+ *   0x4602..05  - JPEG output size = QVGA 320x240 */
 static const uint16_t ov5640_jpeg_fmt[][2] = {
     {0x3820, 0x40},   /* no binning */
     {0x3821, 0x20},   /* JPEG enable (bit5) */
     {0x4713, 0x02},   /* jpg mode select (mode 2) */
     {0x4300, 0x00},   /* YUV422 */
     {0x501f, 0x30},   /* YUYV */
-    {0x3002, 0x00},   /* 0x1c -> 0x00 */
-    {0x3006, 0xff},   /* 0xc3 -> 0xff */
+    {0x3002, 0x00},   /* JPEG block enables */
+    {0x3006, 0xeb},   /* JPG clocks: (0xc3 & 0xd7) | 0x28 (h750-mini value) */
     {0x471c, 0x50},   /* 0xd0 -> 0x50 */
+    {0x4600, 0xa0},   /* JPEG fixed line count */
+    {0x4602, 0x01}, {0x4603, 0x40},   /* JPEG output width = 320 */
+    {0x4604, 0x00}, {0x4605, 0xf0},   /* JPEG output height = 240 */
+    /* DVP PCLK divisors for QVGA (esp32 ov5640 table) */
+    {0x3818, 0xa8}, {0x3819, 0x30}, {0x381c, 0x12}, {0x381d, 0x22},
+    {0x4407, 0x10},   /* lower JPEG quality -> smaller frames, less work */
 };
 
 /* --- Ring buffer + DMA ----------------------------------------------------- */
@@ -293,7 +302,8 @@ void DMA2_Stream1_IRQHandler(void)
 static void dcmi_dma_init(void);
 static void dcmi_init(void);
 
-static uint32_t scan_pos;    /* ring scan position (frame extraction) */
+static uint32_t scan_pos;          /* ring scan position (frame extraction) */
+static int dcmi_started;           /* non-zero once DCMI+DMA capture runs */
 
 /* Restart the DCMI+DMA capture (used after a stall/error). */
 static void ov5640_capture_restart(void)
@@ -302,6 +312,7 @@ static void ov5640_capture_restart(void)
     HAL_DMA_Abort(&hdma_dcmi);
     dcmi_dma_init();
     dcmi_init();
+    dcmi_started = 1;
     scan_pos = 0;
 }
 
@@ -449,59 +460,140 @@ static void dcmi_init(void)
 
 /* --- Frame extraction (zero-copy scan of the ring) ------------------------- */
 
+static volatile uint32_t g_last_frame_tick;   /* HAL_GetTick() of last frame */
+static volatile uint32_t g_frame_count;       /* frames found since boot */
+
 uint32_t OV5640_GetJpegFrame(const uint8_t **frame)
 {
     /* If a DCMI error aborted the capture, restart it before scanning. */
     ov5640_capture_check();
 
-    /* The ring is small (128 KB) and the DMA wraps continuously, so scan
-     * the whole ring for complete JPEG frames (FF D8 FF ... FF D9) and
-     * return the LAST one found. A ~128 KB scan is ~0.5 ms at 180 MHz. */
+    /* The ring is small (128 KB) and the DMA wraps continuously. Scan it
+     * for complete JPEG frames (FF D8 FF ... FF D9) and return the LAST
+     * one found. Positions are computed linearly over [start, start+size)
+     * and wrapped to the array; only frames fully contained in memory
+     * (no wrap across the array end) are returned, since they must be a
+     * single contiguous buffer. */
     uint32_t size  = RING_WORDS * 4U;
+    uint32_t ndtr  = hdma_dcmi.Instance->NDTR;
+    uint32_t start = (RING_WORDS - ndtr) * 4U;   /* oldest byte */
     uint32_t best_len = 0;
     const uint8_t *best = NULL;
-    uint32_t i = 0;
+    uint32_t lin;                  /* linear position in [start, start+size) */
 
-    while (i + 2 < size)
+    for (lin = start; lin + 2 < start + size; lin++)
     {
-        if (jpeg_ring[i] == 0xFF && jpeg_ring[i + 1] == 0xD8 &&
-            jpeg_ring[i + 2] == 0xFF)
+        uint32_t i = lin % size;
+        if (jpeg_ring[i] == 0xFF && jpeg_ring[(i + 1) % size] == 0xD8 &&
+            jpeg_ring[(i + 2) % size] == 0xFF)
         {
-            uint32_t j = i + 2;
-            while (j + 1 < size)
+            /* SOI at lin; look for EOI after it. */
+            uint32_t l = lin + 2;
+            while (l + 1 < start + size)
             {
-                if (jpeg_ring[j] == 0xFF && jpeg_ring[j + 1] == 0xD9)
+                uint32_t j = l % size;
+                if (jpeg_ring[j] == 0xFF && jpeg_ring[(j + 1) % size] == 0xD9)
                 {
-                    uint32_t flen = (j + 2) - i;
-                    if (flen >= OV5640_MIN_JPEG_LEN)
+                    uint32_t flen = (l + 2) - lin;
+                    /* The frame must be contiguous in memory: no wrap. */
+                    if (flen >= OV5640_MIN_JPEG_LEN && (lin % size) + flen <= size)
                     {
-                        best     = &jpeg_ring[i];
+                        best     = &jpeg_ring[lin % size];
                         best_len = flen;
                     }
-                    i = j + 2;       /* continue after this span */
-                    break;           /* inner loop */
+                    lin = l + 1;   /* continue after this span */
+                    break;
                 }
-                j++;
+                l++;
             }
-            if (j + 1 >= size)
-            {
-                /* SOI without a complete frame (partial write at ring
-                 * tail): skip past it byte-wise and keep scanning. */
-                i++;
-            }
-        }
-        else
-        {
-            i++;
+            /* SOI without a complete frame (partial write): keep going. */
         }
     }
 
     if (best)
     {
         *frame = best;
+        g_last_frame_tick = HAL_GetTick();
+        g_frame_count++;
         return best_len;
     }
     return 0;
+}
+
+uint32_t OV5640_FrameCount(void)
+{
+    return g_frame_count;
+}
+
+/* Soft JPEG-encoder restart (no power-cycle): re-toggle the compression
+ * enable and re-launch the QVGA timing group. This re-syncs a stalled
+ * encoder (VFIFO overflow) in ~20 ms instead of the 1-4 s full re-init. */
+static int ov5640_soft_restart(void)
+{
+    if (ov5640_write_reg(0x3821, 0x00) != 0) return -1;   /* JPEG disable */
+    HAL_Delay(10);
+    if (ov5640_write_reg(0x3821, 0x20) != 0) return -1;   /* JPEG enable  */
+    if (ov5640_write_reg(0x3212, 0x03) != 0) return -1;   /* group 3 start */
+    if (ov5640_write_reg(0x3814, 0x31) != 0) return -1;
+    if (ov5640_write_reg(0x3815, 0x31) != 0) return -1;
+    if (ov5640_write_reg(0x3212, 0x13) != 0) return -1;   /* end group 3   */
+    if (ov5640_write_reg(0x3212, 0xa3) != 0) return -1;   /* launch        */
+    return 0;
+}
+
+/* Health check: the OV5640 JPEG encoder on this module goes quiet a few
+ * seconds after configuration (it stalls ~3 s in). When frames stop,
+ * soft-restart the encoder (fast), falling back to a full power-cycle +
+ * reconfigure. Call periodically from the main loop. */
+void OV5640_HealthCheck(void)
+{
+    uint32_t now;
+    static uint32_t last_msg;
+
+    if (!camera_ready) return;
+
+    now = HAL_GetTick();
+    if (g_last_frame_tick == 0U)
+    {
+        g_last_frame_tick = now;
+        return;
+    }
+    if ((now - g_last_frame_tick) < 500U) return;
+
+    /* Rate-limit the recovery chatter (the sensor stalls every ~3 s). */
+    if (now - last_msg >= 10000U)
+    {
+        uint8_t ovf = 0;
+        ov5640_read_reg(0x4417, &ovf);
+        printf("OV5640: encoder stall (jfifo_ovf=%02x) - recovering\r\n",
+               (unsigned)ovf);
+        last_msg = now;
+    }
+
+    if (ov5640_soft_restart() == 0)
+    {
+        const uint8_t *f;
+        uint32_t flen = 0;
+        uint32_t t0 = HAL_GetTick();
+        while ((HAL_GetTick() - t0) < 1000U)
+        {
+            flen = OV5640_GetJpegFrame(&f);
+            if (flen) break;
+        }
+        if (flen) return;
+    }
+
+    /* Soft restart failed: full re-init (also rate-limited). */
+    if (now - last_msg >= 10000U)
+    {
+        printf("OV5640: soft restart failed, full re-init\r\n");
+        last_msg = now;
+    }
+    if (OV5640_Init() != 0)
+    {
+        camera_ready = 0;
+        printf("OV5640: re-init failed, camera disabled\r\n");
+    }
 }
 
 int OV5640_Ready(void)
@@ -566,6 +658,15 @@ int OV5640_Init(void)
 {
     uint8_t idh = 0, idl = 0;
 
+    /* Re-init (health watchdog): stop the old capture before reconfiguring,
+     * otherwise HAL_DMA_Init fails on the busy stream. */
+    if (dcmi_started)
+    {
+        HAL_DCMI_Stop(&hdcmi);
+        HAL_DMA_Abort(&hdma_dcmi);
+        dcmi_started = 0;
+    }
+
     ov5640_gpio_init();
     ov5640_power_on();
     ov5640_i2c_init();
@@ -600,6 +701,7 @@ int OV5640_Init(void)
         /* Bring up DCMI + DMA capture. */
         dcmi_dma_init();
         dcmi_init();
+        dcmi_started = 1;
 
         /* Wait ~1.2 s for a complete JPEG frame. */
         scan_pos = 0;

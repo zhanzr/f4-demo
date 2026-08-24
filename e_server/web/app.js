@@ -253,7 +253,10 @@ window.addEventListener('resize', redrawAll);
 
 const camImg = document.getElementById('camera-img');
 const camPh = document.getElementById('camera-placeholder');
+const camBtn = document.getElementById('cam-stream');
 let camStreaming = false;
+let camLastFrames = -1;
+let camNoAdvance = 0;
 
 function camShowImg(show) {
   camImg.style.display = show ? 'block' : 'none';
@@ -261,26 +264,80 @@ function camShowImg(show) {
 }
 
 function camStart() {
-  camShowImg(true);
+  camBtn.textContent = 'Stop stream';
+  camLastFrames = -1;
+  camNoAdvance = 0;
   /* The MJPEG stream auto-updates: pointing src at /stream keeps it live. */
   camImg.src = '/stream?' + Date.now();
   camStreaming = true;
-  setStatus('camera-status', 'streaming', 'ok');
+  setStatus('camera-status', 'connecting…', '');
+  camWatch();
 }
 
 function camStop() {
   camImg.removeAttribute('src');
+  camBtn.textContent = 'Start stream';
   camStreaming = false;
+  camShowImg(false);
   setStatus('camera-status', 'stream stopped', '');
 }
+
+/* While streaming, check /api/camera every 2 s: the frame counter must
+ * advance, otherwise the sensor isn't feeding frames (the stream header
+ * alone never draws an image). */
+async function camWatch() {
+  if (!camStreaming) return;
+  let j;
+  try {
+    j = await getJSON('/api/camera');
+  } catch (e) {
+    setTimeout(camWatch, 2000);
+    return;
+  }
+  if (j.frames !== undefined) {
+    if (camLastFrames >= 0 && j.frames === camLastFrames) {
+      if (++camNoAdvance >= 3) {
+        setStatus('camera-status', 'no frames arriving — restarting stream', 'err');
+        camStop();
+        setTimeout(camStart, 1000);
+        return;
+      }
+    } else {
+      camNoAdvance = 0;
+    }
+    camLastFrames = j.frames;
+  }
+  setTimeout(camWatch, 2000);
+}
+
+/* 'load' fires when the browser has decoded the first frame (for the live
+ * stream this is the first MJPEG part; for a snapshot the single frame). */
+camImg.addEventListener('load', () => {
+  camShowImg(true);
+  if (camStreaming) setStatus('camera-status', 'streaming', 'ok');
+});
+
+/* 'error' fires when the request fails (503 etc.) or the data can't be
+ * decoded - surface it instead of leaving a silent blank box. */
+camImg.addEventListener('error', () => {
+  camShowImg(false);
+  if (camStreaming) {
+    camBtn.textContent = 'Start stream';
+    camStreaming = false;
+    setStatus('camera-status', 'stream failed — camera not feeding frames', 'err');
+  } else {
+    setStatus('camera-status', 'snapshot failed — no frame', 'err');
+  }
+});
 
 document.getElementById('cam-stream').addEventListener('click', () => {
   if (camStreaming) { camStop(); } else { camStart(); }
 });
 document.getElementById('cam-snapshot').addEventListener('click', () => {
+  if (camStreaming) return;          /* don't fight the live stream */
+  camShowImg(false);                 /* show the placeholder while fetching */
   camImg.src = '/capture?' + Date.now();
-  camShowImg(true);
-  setStatus('camera-status', 'snapshot', 'ok');
+  setStatus('camera-status', 'snapshot…', '');
 });
 
 async function loadCamera() {
@@ -289,7 +346,9 @@ async function loadCamera() {
     const j = await getJSON('/api/camera');
     if (j.ready) {
       setStatus('camera-status',
-                'OV5640 ready (' + (j.w || '?') + 'x' + (j.h || '?') + ')', 'ok');
+                'OV5640 ready (' + (j.w || '?') + 'x' + (j.h || '?') +
+                (j.frames !== undefined ? ' · ' + j.frames + ' frames' : '') +
+                ')', 'ok');
     } else {
       setStatus('camera-status', 'OV5640 not ready', 'err');
     }

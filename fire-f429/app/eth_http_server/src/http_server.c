@@ -341,8 +341,10 @@ static void api_camera(struct http_conn *c)
   char body[96];
   int n = snprintf(body, sizeof(body),
                    "{\"source\":\"ov5640\",\"ready\":%d,"
-                   "\"w\":320,\"h\":240,\"ts\":%lu}",
-                   OV5640_Ready() ? 1 : 0, (unsigned long)HAL_GetTick());
+                   "\"w\":320,\"h\":240,\"frames\":%lu,\"ts\":%lu}",
+                   OV5640_Ready() ? 1 : 0,
+                   (unsigned long)OV5640_FrameCount(),
+                   (unsigned long)HAL_GetTick());
   http_reply_json(c, body);
 }
 
@@ -433,7 +435,8 @@ static void api_capture(struct http_conn *c)
 
   if (OV5640_Ready())
   {
-    /* Wait briefly for a complete frame (a few frame periods). */
+    /* The main loop health watchdog (http_stream_poll) keeps the sensor
+     * alive; here we just wait briefly for a complete frame. */
     uint32_t t0 = HAL_GetTick();
     while (len == 0 && (HAL_GetTick() - t0) < 2000U)
     {
@@ -480,6 +483,9 @@ void http_stream_poll(void)
   char part[64];
   int pn;
 
+  /* Recover a quiet sensor even when nobody is streaming. */
+  OV5640_HealthCheck();
+
   if (g_stream_pcb == NULL || !OV5640_Ready()) return;
 
   len = OV5640_GetJpegFrame(&frame);
@@ -491,11 +497,37 @@ void http_stream_poll(void)
   pn = snprintf(part, sizeof(part),
                 "Content-Type: image/jpeg\r\nContent-Length: %lu\r\n\r\n",
                 (unsigned long)len);
-  tcp_write(g_stream_pcb, part, (u16_t)pn, TCP_WRITE_FLAG_COPY);
-  tcp_write(g_stream_pcb, frame, (u16_t)len, TCP_WRITE_FLAG_COPY);
-  tcp_write(g_stream_pcb, "\r\n--" STREAM_BOUNDARY "\r\n",
-            (u16_t)(sizeof("\r\n--" STREAM_BOUNDARY "\r\n") - 1),
-            TCP_WRITE_FLAG_COPY);
+  if (tcp_write(g_stream_pcb, part, (u16_t)pn, TCP_WRITE_FLAG_COPY) != ERR_OK)
+  {
+    stream_close();
+    return;
+  }
+
+  /* tcp_write takes a u16_t length, so a frame > 0xFFFF must be split
+   * into <= 0xFFFF chunks (with TCP_WRITE_FLAG_MORE between them). */
+  {
+    uint32_t off = 0;
+    while (off < len)
+    {
+      u16_t chunk = (u16_t)LWIP_MIN(len - off, 0xFFFFU);
+      u8_t  flags = TCP_WRITE_FLAG_COPY;
+      if (off + chunk < len) flags |= TCP_WRITE_FLAG_MORE;
+      if (tcp_write(g_stream_pcb, frame + off, chunk, flags) != ERR_OK)
+      {
+        stream_close();
+        return;
+      }
+      off += chunk;
+    }
+  }
+
+  if (tcp_write(g_stream_pcb, "\r\n--" STREAM_BOUNDARY "\r\n",
+                (u16_t)(sizeof("\r\n--" STREAM_BOUNDARY "\r\n") - 1),
+                TCP_WRITE_FLAG_COPY) != ERR_OK)
+  {
+    stream_close();
+    return;
+  }
   tcp_output(g_stream_pcb);
 }
 

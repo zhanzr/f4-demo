@@ -74,7 +74,7 @@ POST /api/leds         body {"leds":[0]}  -> applies to the LED
 GET  /api/adc          {"vrefint_mv":..,"temp_c":..,"vbat_v":..,
                         "motion_x":..,"motion_y":..,"motion_z":..,
                         "dht11_t":..,"dht11_h":..,"ts":..}
-GET  /api/camera       {"source":"ov5640","ready":1,"w":320,"h":240,"ts":..}
+GET  /api/camera       {"source":"ov5640","ready":1,"w":320,"h":240,"frames":N,"ts":..}
 GET  /stream           live MJPEG (multipart/x-mixed-replace, QVGA 320x240)
 GET  /capture          one JPEG frame (image/jpeg, Content-Length)
 GET  /api/info         {"arch","lan_ip","public_ip":null,"geo":null,
@@ -110,6 +110,17 @@ The on-board **OV5640** module streams JPEG over the web:
   `Content-Length`.
 - Transient DCMI sync errors are cleared in the IRQ handler (the HAL would
   otherwise abort the DMA); a 2 s NDTR stall watchdog restarts the capture.
+
+> **Known quirk (this module)**: the OV5640 JPEG encoder stalls a few
+> seconds after configuration (it silently reverts to YUV output -
+> `jfifo_ovf` stays 0, so it is not a FIFO overflow). The driver's
+> `OV5640_HealthCheck()` (called from the main loop) detects the stall
+> (no complete frame for 500 ms) and re-triggers the encoder via `0x3821`
+> (COMPRESSION ENABLE) - a ~20 ms soft restart that reliably resumes the
+> stream. The result is a live stream with brief pauses every few seconds;
+> without this watchdog the stream would go blank permanently after boot.
+> The web UI monitors `/api/camera`'s `frames` counter and reports/restarts
+> if it stops advancing.
 
 Boot console (camera):
 
