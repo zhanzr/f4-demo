@@ -92,7 +92,9 @@
 #define LWIP_ICMP                       1
 
 /* ---------- DHCP options ---------- */
-#define LWIP_DHCP               1
+/* Static IP only (see main.h): no DHCP - faster boot, fixed 192.168.5.200
+ * for debugging (host adapter is 192.168.5.240). */
+#define LWIP_DHCP               0
 
 /* ---------- UDP options ---------- */
 #define LWIP_UDP                1

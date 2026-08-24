@@ -1,12 +1,15 @@
 /**
   * @file    eth_http_server/src/ov5640.h
   * @brief   OV5640 camera driver for the fire-f429 board: DCMI + DMA capture
-  *          of JPEG frames, served as an MJPEG stream.
+  *          of raw RGB565 frames, served as a 24-bit BMP stream.
   *
-  * The OV5640 is configured for direct JPEG output (built-in JPEG encoder)
-  * at QVGA (320x240). The DCMI peripheral + DMA2 continuously capture the
-  * byte stream into an internal-SRAM circular buffer; a frame parser scans
-  * for JPEG SOI (FFD8) / EOI (FFD9) markers to extract complete frames.
+  * The OV5640 runs in RGB565 mode (the vendor-proven stable mode - the
+  * built-in JPEG encoder on this module does not produce valid output
+  * through the F4 DCMI). Frames are QQVGA (160x120, 38400 bytes each).
+  * The DCMI peripheral + DMA2 continuously capture the byte stream into an
+  * internal-SRAM circular buffer (exactly 3 frame slots); a fixed-size
+  * frame parser hands out complete frames. The HTTP layer converts
+  * RGB565 -> RGB888 and serves 24-bit BMP (universally renderable).
   *
   * Wiring (fire-f429, same as the vendor 45-OV5640 example):
   *   DCMI_VSYNC -> PI5, DCMI_HSYNC -> PA4, DCMI_PIXCLK -> PA6
@@ -22,30 +25,31 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* JPEG frame ring buffer (internal SRAM for DMA2). Size must be big enough
- * for a full QVGA JPEG frame (typically 20-60 KB; 128 KB is safe). */
-#define OV5640_FRAME_BUF_SIZE   (128U * 1024U)
+/* RGB565 frame geometry (QQVGA - the vendor's stable 15 fps mode). */
+#define OV5640_FRAME_W       160U
+#define OV5640_FRAME_H       120U
+#define OV5640_FRAME_BYTES   (OV5640_FRAME_W * OV5640_FRAME_H * 2U)  /* 38400 */
+
+/* Ring buffer (internal SRAM for DMA2) = exactly 3 frame slots so frames
+ * are always aligned (never straddle the ring end). */
+#define OV5640_FRAME_BUF_SIZE  (3U * OV5640_FRAME_BYTES)   /* 115200 */
 
 /* OV5640 SCCB address (7-bit 0x3C -> 8-bit write 0x78). */
 #define OV5640_SCCB_ADDR        0x78U
 
-/* Minimum plausible JPEG frame length (QVGA JPEG is > 1 KB); shorter
- * FF D8..FF D9 spans are random patterns in non-JPEG data. */
-#define OV5640_MIN_JPEG_LEN     500U
-
-/* Init the camera: power-on/reset, SCCB (I2C1), read ID, configure JPEG
- * QVGA, and start the DCMI+DMA continuous capture. Returns 0 on success. */
+/* Init the camera: power-on/reset, SCCB (I2C1), read ID, configure RGB565
+ * QQVGA, and start the DCMI+DMA continuous capture. Returns 0 on success. */
 int  OV5640_Init(void);
 
-/* Get the next complete JPEG frame (SOI..EOI) from the ring buffer.
- * Returns the length, or 0 if none available yet. The returned pointer is
- * valid until the next call. */
-uint32_t OV5640_GetJpegFrame(const uint8_t **frame);
+/* Get the next complete RGB565 frame from the ring buffer (fixed size
+ * OV5640_FRAME_BYTES). Returns 1 and sets *frame, or 0 if none available
+ * yet. The returned pointer is valid until the next call. */
+int OV5640_GetFrame(const uint8_t **frame);
 
 /* True once the camera is initialized and frames are flowing. */
 int OV5640_Ready(void);
 
-/* Total JPEG frames found since boot (for status polling). */
+/* Total frames found since boot (for status polling). */
 uint32_t OV5640_FrameCount(void);
 
 /* Health watchdog: if the sensor goes quiet (no frame for a while),

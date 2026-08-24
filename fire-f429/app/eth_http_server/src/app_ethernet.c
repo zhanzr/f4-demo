@@ -49,6 +49,7 @@ void ethernet_link_status_updated(struct netif *netif)
     DHCP_state = DHCP_START;
 #else
     printf("ETH: link UP, static IP %s\r\n", ip4addr_ntoa(netif_ip4_addr(netif)));
+    maybe_start_http_server();
 #endif
   }
   else

@@ -35,14 +35,13 @@ the BCR software reset suffices).
 ## What happens
 
 1. `main()` sets up the 180 MHz clock, UART, and `lwip_init()`.
-2. `Netif_Config()` adds the ETH netif (DHCP by default).
-3. `http_server_start()` binds a raw-API TCP listener on port 80 (after DHCP).
+2. `Netif_Config()` adds the ETH netif with the **static IP 192.168.5.200**.
+3. `http_server_start()` binds a raw-API TCP listener on port 80 (on link-up).
 4. The main loop:
    - `ethernetif_input()` polls received frames into lwIP,
    - `sys_check_timeouts()` runs the lwIP timers,
-   - `http_stream_poll()` feeds the MJPEG stream,
-   - `Ethernet_Link_Periodic_Handle()` / `DHCP_Periodic_Handle()` drive the
-     PHY link check and DHCP state machine.
+   - `http_stream_poll()` feeds the BMP camera stream,
+   - `Ethernet_Link_Periodic_Handle()` drives the PHY link check.
 
 ## TCP configuration notes (why the page used to hang)
 
@@ -74,9 +73,9 @@ POST /api/leds         body {"leds":[0]}  -> applies to the LED
 GET  /api/adc          {"vrefint_mv":..,"temp_c":..,"vbat_v":..,
                         "motion_x":..,"motion_y":..,"motion_z":..,
                         "dht11_t":..,"dht11_h":..,"ts":..}
-GET  /api/camera       {"source":"ov5640","ready":1,"w":320,"h":240,"frames":N,"ts":..}
-GET  /stream           live MJPEG (multipart/x-mixed-replace, QVGA 320x240)
-GET  /capture          one JPEG frame (image/jpeg, Content-Length)
+GET  /api/camera       {"source":"ov5640-rgb565","ready":1,"w":160,"h":120,"frames":N,"ts":..}
+GET  /stream           live stream (multipart/x-mixed-replace, 24-bit BMP parts)
+GET  /capture          one frame (image/bmp, Content-Length)
 GET  /api/info         {"arch","lan_ip","public_ip":null,"geo":null,
                         "weather":null}
 GET  /public/<name>    raw image bytes (from the embedded_files[] table)
@@ -85,9 +84,11 @@ GET  /public/<name>    raw image bytes (from the embedded_files[] table)
 The `public_ip` / `geo` / `weather` fields are `null` (the page shows "N/A")
 because the board has no HTTP/TLS client.
 
-## Camera (OV5640 MJPEG)
+## Camera (OV5640 RGB565 / BMP)
 
-The on-board **OV5640** module streams JPEG over the web:
+The on-board **OV5640** streams live images over the web as **24-bit BMP**
+(universally renderable in browsers; Chrome/Firefox do not render 16-bit
+BMP, so the RGB565 frames are converted in software):
 
 - **SCCB** control on I2C1 (PB6/PB7 - shared with the MPU6050/EEPROM, the
   driver probes the sensor ID 0x56 so the devices coexist).
@@ -95,38 +96,28 @@ The on-board **OV5640** module streams JPEG over the web:
   PH9/PH10/PH11/PH12/PH14, PD3, PI6, PI7. PWDN on PG3, RST on PG2
   (the 挑战者 F429 core board wires RST to PG2 - the F429IG-V1V2 example's
   PB5 must not be used here).
-- The sensor is configured for **QVGA (320x240) JPEG** output. The key
-  registers: `0x3821` bit5 (COMPRESSION ENABLE / JPEG enable - this is the
-  one that actually turns the JPEG encoder on), `0x4713` (JPEG mode select),
-  `0x4300/0x501f` (YUV422 input to the encoder). The config is applied in
-  three tables (vendor base + JPEG format + QVGA timing) with a retry loop
-  that power-cycles the module until real JPEG frames flow (the module's
-  24 MHz crystal start-up is occasionally slow).
-- DCMI runs in **JPEG mode** with DMA2 Stream1 (circular) into a 128 KB
-  internal-SRAM ring (`.sram_dma`). `OV5640_GetJpegFrame()` scans the ring
-  for complete frames (`FF D8 FF ... FF D9`, minimum length) and returns the
-  last one; `http_stream_poll()` (called from the main loop) pushes them to
-  the active `/stream` client, and `/capture` serves one frame with
-  `Content-Length`.
-- Transient DCMI sync errors are cleared in the IRQ handler (the HAL would
-  otherwise abort the DMA); a 2 s NDTR stall watchdog restarts the capture.
-
-> **Known quirk (this module)**: the OV5640 JPEG encoder stalls a few
-> seconds after configuration (it silently reverts to YUV output -
-> `jfifo_ovf` stays 0, so it is not a FIFO overflow). The driver's
-> `OV5640_HealthCheck()` (called from the main loop) detects the stall
-> (no complete frame for 500 ms) and re-triggers the encoder via `0x3821`
-> (COMPRESSION ENABLE) - a ~20 ms soft restart that reliably resumes the
-> stream. The result is a live stream with brief pauses every few seconds;
-> without this watchdog the stream would go blank permanently after boot.
-> The web UI monitors `/api/camera`'s `frames` counter and reports/restarts
-> if it stops advancing.
+- The sensor runs **RGB565 at QQVGA (160x120)** - the vendor-proven stable
+  mode (the vendor examples all use RGB565; the built-in JPEG encoder does
+  not produce valid output through the F4 DCMI on this module - VSYNC fires
+  at ~200 Hz with only ~200 bytes/frame captured and no complete SOI/EOI
+  frames; the markers that appear match random chance). Sustained rate
+  measured on hardware: **~19 fps, all frames distinct**.
+- DCMI runs in **normal (non-JPEG) mode** with DMA2 Stream1 (circular) into
+  a 115200-byte internal-SRAM ring (`.sram_dma`, exactly 3 frame slots so a
+  frame never straddles the ring end). `OV5640_GetFrame()` hands out
+  fixed-size frames by tracking the DMA write position (with wrap-resync);
+  `http_stream_poll()` converts each frame to a 24-bit BMP
+  (`frame_to_bmp()`, header + BGR pixels) and pushes it to the active
+  `/stream` client; `/capture` serves one BMP with `Content-Length`.
+- A DMA-write-position watchdog restarts the capture if the DMA freezes
+  for 2 s (RGB565 is stable, so this is just a safety net - and it tracks
+  the DMA, not consumed frames, so an idle stream never false-triggers).
 
 Boot console (camera):
 
 ```
-OV5640: ready (QVGA 320x240 JPEG)
-OV5640: selftest OK - N JPEG frames, last MB bytes, F fps
+OV5640: ready (RGB565 160x120)
+OV5640: selftest OK - N RGB565 frames (160x120), F fps
 ```
 
 ## Web assets
@@ -148,33 +139,31 @@ With the cable connected:
 
 ```
 === eth_http_server on fire-f429 (LAN8720A, RMII) ===
-HTTP server: http://<dhcp-ip>/  (DHCP enabled)
+HTTP server: http://192.168.5.200/  (static IP)
 ETH: LAN8720A PHY OK (ID 0007:c0f1)
-ETH: looking for DHCP server ...
-ETH: DHCP IP = 192.168.x.x
+ETH: link UP, static IP 192.168.5.200
 HTTP server listening on :80
 ```
 
-The **HTTP listener only comes up after the IP is assigned** (DHCP bound or
-the static fallback) - it is started by the DHCP state machine in
-`src/app_ethernet.c`, not at boot. With the cable unplugged the board prints
-only up to the PHY line and never starts the listener (no "listening" line).
-If DHCP times out it falls back to the static IP in `src/main.h`
-(192.168.5.200) and then starts the listener.
+The board uses a **static IP (192.168.5.200)** - no DHCP. The HTTP listener
+comes up when the link is up (`ethernet_link_status_updated` starts it). With
+the cable unplugged the board prints only up to the PHY line and never starts
+the listener (no "listening" line). Set your host adapter to the same subnet
+(e.g. 192.168.5.240, as documented) and browse to `http://192.168.5.200/`.
 
 ## Files
 
 - `src/main.c` - NO_SYS main loop (RX poll + lwIP timers + link/DHCP)
 - `src/ethernetif.c/h` - HAL ETH + lwIP netif driver (RMII, `.sram_dma` buffers)
 - `src/lan8720a.c/h` - minimal LAN8720A PHY driver (MDIO, auto-neg, PHYSCSR)
-- `src/app_ethernet.c/h` - netif config + DHCP state machine + link periodic;
-  starts the HTTP listener once the IP is assigned
+- `src/app_ethernet.c/h` - netif config + link periodic; starts the HTTP
+  listener once the link is up (static IP)
 - `src/http_server.c/h` - raw-API HTTP server (`http_server_hw_init` at boot,
-  `http_server_start` after DHCP; `/stream` + `/capture` MJPEG)
-- `src/ov5640.c/h` - OV5640 driver (SCCB, JPEG QVGA config, DCMI+DMA ring,
-  frame extraction, boot self-test)
+  `http_server_start` on link-up; `/stream` + `/capture` BMP camera)
+- `src/ov5640.c/h` - OV5640 driver (SCCB, RGB565 QQVGA config, DCMI+DMA ring,
+  fixed-size frame extraction, DMA-based stall watchdog, boot self-test)
 - `src/lwipopts.h` - lwIP NO_SYS configuration (WND_SCALE, 64 KB snd buf)
-- `src/main.h` - MAC address + static fallback IP
+- `src/main.h` - MAC address + static IP (192.168.5.200)
 - `src/arch/cc.h` - lwIP compiler/arch config (NO_SYS)
 - `src/web_assets.h` - generated site bundle
 - `../../drivers/lwip` - vendored lwIP STABLE-2_2_1 (core + netif only)
@@ -187,4 +176,5 @@ ninja -C build
 ninja -C build flash
 ```
 
-Connect the board to the LAN via its RJ45 and browse to `http://<dhcp-ip>/`.
+Connect the board to the LAN via its RJ45 and browse to
+`http://192.168.5.200/`.

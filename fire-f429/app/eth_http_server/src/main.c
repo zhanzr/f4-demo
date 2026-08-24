@@ -14,6 +14,7 @@
 
 #include "board.h"
 #include "stm32f4xx_hal.h"
+#include "main.h"
 #include "lwip/opt.h"
 #include "lwip/init.h"
 #include "lwip/netif.h"
@@ -59,7 +60,7 @@ int main(void)
     Board_Init();          /* 180 MHz, LEDs, USART1 console, SDRAM */
 
     printf("\r\n=== eth_http_server on fire-f429 (LAN8720A, RMII) ===\r\n");
-    printf("HTTP server: http://<dhcp-ip>/  (DHCP enabled)\r\n");
+    printf("HTTP server: http://192.168.5.200/  (static IP)\r\n");
 
     lwip_init();
     Netif_Config();

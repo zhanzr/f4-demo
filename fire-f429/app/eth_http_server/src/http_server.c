@@ -340,16 +340,73 @@ static void api_camera(struct http_conn *c)
 {
   char body[96];
   int n = snprintf(body, sizeof(body),
-                   "{\"source\":\"ov5640\",\"ready\":%d,"
-                   "\"w\":320,\"h\":240,\"frames\":%lu,\"ts\":%lu}",
+                   "{\"source\":\"ov5640-rgb565\",\"ready\":%d,"
+                   "\"w\":%d,\"h\":%d,\"frames\":%lu,\"ts\":%lu}",
                    OV5640_Ready() ? 1 : 0,
+                   (int)OV5640_FRAME_W, (int)OV5640_FRAME_H,
                    (unsigned long)OV5640_FrameCount(),
                    (unsigned long)HAL_GetTick());
   http_reply_json(c, body);
 }
 
 /* --------------------------------------------------------------------------
- * MJPEG stream (multipart/x-mixed-replace).
+ * RGB565 -> 24-bit BMP (universally renderable in browsers; Chrome/Firefox
+ * do not render 16-bit BMP, so we convert to 24-bit RGB).
+ * ------------------------------------------------------------------------ */
+#define BMP_HDR_LEN  54
+#define BMP_STRIDE   (OV5640_FRAME_W * 3U)                      /* 480 */
+#define BMP_IMG_SIZE (BMP_STRIDE * OV5640_FRAME_H)              /* 57600 */
+#define BMP_TOT_SIZE (BMP_HDR_LEN + BMP_IMG_SIZE)               /* 57654 */
+
+static uint8_t bmp_rgb[BMP_TOT_SIZE];   /* 54-byte header + 24-bit pixels */
+
+/* Build a 24-bit BMP header (top-down rows, no padding). */
+static void bmp_header(uint8_t *h)
+{
+  memset(h, 0, BMP_HDR_LEN);
+  h[0] = 'B'; h[1] = 'M';
+  h[2] = (uint8_t)(BMP_TOT_SIZE & 0xFF);       h[3] = (uint8_t)((BMP_TOT_SIZE >> 8) & 0xFF);
+  h[4] = (uint8_t)((BMP_TOT_SIZE >> 16) & 0xFF); h[5] = (uint8_t)((BMP_TOT_SIZE >> 24) & 0xFF);
+  h[10] = BMP_HDR_LEN;
+  h[14] = 40;                       /* BITMAPINFOHEADER size */
+  h[18] = (uint8_t)(OV5640_FRAME_W & 0xFF); h[19] = (uint8_t)(OV5640_FRAME_W >> 8);
+  /* negative height = top-down */
+  {
+    uint32_t nh = (uint32_t)(-(int32_t)OV5640_FRAME_H);
+    h[22] = (uint8_t)(nh & 0xFF); h[23] = (uint8_t)((nh >> 8) & 0xFF);
+    h[24] = (uint8_t)((nh >> 16) & 0xFF); h[25] = (uint8_t)((nh >> 24) & 0xFF);
+  }
+  h[26] = 1;                        /* planes */
+  h[28] = 24;                       /* bitcount */
+  h[34] = (uint8_t)(BMP_IMG_SIZE & 0xFF); h[35] = (uint8_t)((BMP_IMG_SIZE >> 8) & 0xFF);
+  h[36] = (uint8_t)((BMP_IMG_SIZE >> 16) & 0xFF); h[37] = (uint8_t)((BMP_IMG_SIZE >> 24) & 0xFF);
+}
+
+/* Convert one RGB565 frame (from the DMA ring) into the 24-bit BGR buffer.
+ * Returns the total bytes of the BMP (header + pixels). */
+static uint32_t frame_to_bmp(const uint8_t *frame, uint8_t *out)
+{
+  const uint16_t *p = (const uint16_t *)frame;
+  uint8_t *d = out + BMP_HDR_LEN;
+  uint32_t n;
+
+  bmp_header(out);
+
+  for (n = 0; n < OV5640_FRAME_W * OV5640_FRAME_H; n++)
+  {
+    uint16_t v = p[n];
+    uint8_t r5 = (uint8_t)((v >> 11) & 0x1F);   /* standard 565 (vendor) */
+    uint8_t g6 = (uint8_t)((v >> 5)  & 0x3F);
+    uint8_t b5 = (uint8_t)(v & 0x1F);
+    *d++ = (uint8_t)((b5 << 3) | (b5 >> 2));   /* B */
+    *d++ = (uint8_t)((g6 << 2) | (g6 >> 4));   /* G */
+    *d++ = (uint8_t)((r5 << 3) | (r5 >> 2));   /* R */
+  }
+  return BMP_TOT_SIZE;
+}
+
+/* --------------------------------------------------------------------------
+ * MJPEG stream (multipart/x-mixed-replace, image/bmp parts).
  * ------------------------------------------------------------------------ */
 #define STREAM_BOUNDARY  "firef429mjpeg"
 
@@ -427,46 +484,49 @@ static void api_stream(struct http_conn *c)
   tcp_output(pcb);
 }
 
-/* GET /capture: a single JPEG frame. */
+/* GET /capture: a single BMP frame. */
 static void api_capture(struct http_conn *c)
 {
   const uint8_t *frame;
-  uint32_t len = 0;
+  uint32_t len;
 
   if (OV5640_Ready())
   {
     /* The main loop health watchdog (http_stream_poll) keeps the sensor
      * alive; here we just wait briefly for a complete frame. */
     uint32_t t0 = HAL_GetTick();
-    while (len == 0 && (HAL_GetTick() - t0) < 2000U)
+    while (!OV5640_GetFrame(&frame) && (HAL_GetTick() - t0) < 2000U)
     {
-      len = OV5640_GetJpegFrame(&frame);
-      if (len == 0) sys_check_timeouts();
+      sys_check_timeouts();
     }
   }
+  else
+  {
+    frame = NULL;
+  }
 
-  if (len == 0)
+  if (frame == NULL)
   {
     http_reply_err(c, 503, "Service Unavailable");
     return;
   }
 
-  /* Serve the frame directly from the ring. */
+  /* Convert RGB565 -> 24-bit BMP (header + pixels) into bmp_rgb. */
+  len = frame_to_bmp(frame, bmp_rgb);
+
   int n = snprintf(c->resp, sizeof(c->resp),
                    "HTTP/1.1 200 OK\r\n"
-                   "Content-Type: image/jpeg\r\n"
+                   "Content-Type: image/bmp\r\n"
                    "Content-Length: %lu\r\n"
                    "Cache-Control: no-store\r\n"
                    "Connection: close\r\n"
                    "\r\n",
                    (unsigned long)len);
   c->hdr_len = (size_t)n;
-  c->body_ptr = frame;
+  c->body_ptr = bmp_rgb;
   c->body_len = len;
   /* body_static = 0: conn_send uses TCP_WRITE_FLAG_COPY so the frame is
-   * copied into the lwIP send buffer immediately - the ring is DMA-
-   * overwritten, so we must not reference it while the TCP send is
-   * in flight. */
+   * copied into the lwIP send buffer immediately - bmp_rgb is reused. */
   c->body_static = 0;
   c->total_off = 0;
   c->done = 0;
@@ -474,8 +534,8 @@ static void api_capture(struct http_conn *c)
   if (c->done) http_conn_close(c);
 }
 
-/* Feed the active MJPEG stream from the main loop (drop frames if the
- * send buffer is full - the browser just shows the latest). */
+/* Feed the active stream from the main loop (drop frames if the send
+ * buffer is full - the browser just shows the latest). */
 void http_stream_poll(void)
 {
   const uint8_t *frame;
@@ -488,14 +548,16 @@ void http_stream_poll(void)
 
   if (g_stream_pcb == NULL || !OV5640_Ready()) return;
 
-  len = OV5640_GetJpegFrame(&frame);
-  if (len == 0) return;
+  if (!OV5640_GetFrame(&frame)) return;
 
   /* Only send if the whole part fits, so the buffer never fills. */
-  if ((uint32_t)tcp_sndbuf(g_stream_pcb) < len + 80U) return;
+  if ((uint32_t)tcp_sndbuf(g_stream_pcb) < BMP_TOT_SIZE + 80U) return;
+
+  /* Convert RGB565 -> 24-bit BMP. */
+  len = frame_to_bmp(frame, bmp_rgb);
 
   pn = snprintf(part, sizeof(part),
-                "Content-Type: image/jpeg\r\nContent-Length: %lu\r\n\r\n",
+                "Content-Type: image/bmp\r\nContent-Length: %lu\r\n\r\n",
                 (unsigned long)len);
   if (tcp_write(g_stream_pcb, part, (u16_t)pn, TCP_WRITE_FLAG_COPY) != ERR_OK)
   {
@@ -503,22 +565,10 @@ void http_stream_poll(void)
     return;
   }
 
-  /* tcp_write takes a u16_t length, so a frame > 0xFFFF must be split
-   * into <= 0xFFFF chunks (with TCP_WRITE_FLAG_MORE between them). */
+  if (tcp_write(g_stream_pcb, bmp_rgb, (u16_t)len, TCP_WRITE_FLAG_COPY) != ERR_OK)
   {
-    uint32_t off = 0;
-    while (off < len)
-    {
-      u16_t chunk = (u16_t)LWIP_MIN(len - off, 0xFFFFU);
-      u8_t  flags = TCP_WRITE_FLAG_COPY;
-      if (off + chunk < len) flags |= TCP_WRITE_FLAG_MORE;
-      if (tcp_write(g_stream_pcb, frame + off, chunk, flags) != ERR_OK)
-      {
-        stream_close();
-        return;
-      }
-      off += chunk;
-    }
+    stream_close();
+    return;
   }
 
   if (tcp_write(g_stream_pcb, "\r\n--" STREAM_BOUNDARY "\r\n",
