@@ -18,10 +18,11 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(STM32_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../../board/stm32f429_sdram.ld")
 
-set(WIFI_SDK "${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/wifi_ap6181")
-set(LWIP ${WIFI_SDK}/WICED/network/LwIP/ver2.0.3/src)
+# lwIP 2.2.1 (vendored in drivers/lwip - the plain STABLE release, not the
+# WICED fork used by the WiFi apps; no WICED platform headers needed).
+set(LWIP ${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/lwip/src)
 
-# lwIP 2.0.3 core + netif (NO_SYS raw API - no api/, no FreeRTOS sys_arch).
+# lwIP core + netif (NO_SYS raw API - no api/, no sys_arch).
 file(GLOB LWIP_CORE ${LWIP}/core/*.c ${LWIP}/core/ipv4/*.c)
 file(GLOB LWIP_NETIF ${LWIP}/netif/ethernet.c)
 
@@ -67,10 +68,7 @@ target_include_directories(${PROJECT_NAME}.elf PRIVATE
     src
     src/arch
     ${CMAKE_CURRENT_SOURCE_DIR}/../board_hello/src
-    ${WIFI_SDK}/WICED/platform/GCC
     ${LWIP}/include
-    ${LWIP}/include/netif
-    ${LWIP}/include/ipv4
 )
 
 add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD

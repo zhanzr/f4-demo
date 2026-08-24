@@ -44,8 +44,9 @@
 #define ETH_TX_DESC_CNT                         4U
 #endif
 
-/* Receive buffers: must be > ETH_RX_DESC_CNT (HAL may need spares). */
-#define ETH_RX_BUFFER_CNT                       10U
+/* Receive buffers: must be > ETH_RX_DESC_CNT (HAL may need spares); 16
+ * absorbs a full TCP window burst (12 segments) without drops. */
+#define ETH_RX_BUFFER_CNT                       16U
 
 /* TX bounce buffer: full Ethernet frame (MTU + headers + FCS + margin). */
 #define ETH_TX_BUF_SIZE                         (ETH_MAX_PAYLOAD + 32U)
@@ -98,7 +99,7 @@ ETH_HandleTypeDef EthHandle;
 ETH_TxPacketConfigTypeDef TxConfig;
 static uint8_t     RxAllocStatus;
 
-/* Received-frame counter (RMII watchdog in main.c). */
+/* Received-frame counter (link health diagnostics). */
 volatile uint32_t eth_rx_cnt;
 
 /* Private function prototypes -----------------------------------------------*/
@@ -398,6 +399,21 @@ int32_t ETH_PHY_IO_GetTick(void)
 }
 
 /**
+  * @brief  Re-latch the RMII interface selection.
+  *
+  * Must be called only while the Ethernet MAC is stopped: on the F4,
+  * SYSCFG->PMC's MII/RMII bit routes the 50 MHz RMII reference clock, and
+  * toggling it while the MAC runs glitches the clock and drops the PHY
+  * link. Called from the link-up path before HAL_ETH_Start().
+  */
+void eth_rmii_relatch(void)
+{
+  SYSCFG->PMC &= ~SYSCFG_PMC_MII_RMII_SEL;
+  SYSCFG->PMC |= HAL_ETH_RMII_MODE;
+  (void)SYSCFG->PMC;
+}
+
+/**
   * @brief  Check the PHY link state and (re)start the MAC accordingly.
   */
 void ethernet_link_check_state(struct netif *netif)
@@ -442,6 +458,9 @@ void ethernet_link_check_state(struct netif *netif)
 
     if (linkchanged)
     {
+      /* Re-latch the RMII selection while the MAC is stopped (see
+       * eth_rmii_relatch) - never poke SYSCFG->PMC with the MAC running. */
+      eth_rmii_relatch();
       HAL_ETH_GetMACConfig(&EthHandle, &MACConf);
       MACConf.DuplexMode = duplex;
       MACConf.Speed = speed;

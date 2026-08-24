@@ -27,9 +27,6 @@
 /* Global network interface */
 struct netif gnetif;
 
-/* Received-frame counter (RMII watchdog + LCD status). */
-extern volatile uint32_t eth_rx_cnt;
-
 /* ------------------------------------------------------------------------ */
 static void Netif_Config(void)
 {
@@ -69,8 +66,6 @@ int main(void)
     http_server_hw_init();   /* LEDs + sensors only; the listener comes up
                               * after DHCP (see app_ethernet.c). */
 
-    uint32_t rmii_timer = 0;
-    uint32_t last_rx = 0;
     char ip_str[16];
 
     while (1)
@@ -84,18 +79,6 @@ int main(void)
 #if LWIP_DHCP
         DHCP_Periodic_Handle(&gnetif);
 #endif
-
-        /* The LAN8720A RMII interface is marginal: re-select the RMII mode
-         * if no frame is received for 500 ms while the link is up. */
-        if (netif_is_link_up(&gnetif) && eth_rx_cnt == last_rx &&
-            HAL_GetTick() - rmii_timer >= 500)
-        {
-            rmii_timer = HAL_GetTick();
-            SYSCFG->PMC &= ~SYSCFG_PMC_MII_RMII_SEL;
-            SYSCFG->PMC |= HAL_ETH_RMII_MODE;
-            (void)SYSCFG->PMC;
-        }
-        last_rx = eth_rx_cnt;
 
         ip4addr_ntoa_r(netif_ip4_addr(&gnetif), ip_str, sizeof(ip_str));
         (void)ip_str;

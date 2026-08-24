@@ -86,6 +86,15 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   the PCM stays in the onboard SDRAM (no SD card/FatFs). The PD12 LED is on
   while recording/playing. See its README.
 
+## Vendored libraries
+
+- `drivers/wifi_ap6181/` — the AP6181 (BCM43362) WiFi SDK, including the
+  **WICED fork of lwIP 2.0.3** (mandatory for the WiFi apps; its `memp.h`
+  pulls WICED platform headers).
+- `drivers/lwip/` — plain **lwIP STABLE-2_2_1** (core + netif), used by
+  `app/eth_http_server`. Clean release, unified `include/` layout; coexists
+  with the WICED fork (different apps, different stacks).
+
 ## Creating a project
 
 Use the shared board layer in the project's `CMakeLists.txt`:

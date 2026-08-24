@@ -1,12 +1,17 @@
 # Ethernet HTTP server - fire-f429 (app, LAN8720A PHY via RMII)
 
 A minimal HTTP server on the **fire-f429** board's on-board **LAN8720A**
-Ethernet PHY (RMII), using **lwIP 2.0.3 (NO_SYS / raw API)** and the
+Ethernet PHY (RMII), using **lwIP 2.2.1 (NO_SYS / raw API)** and the
 **HAL ETH** driver. It serves the same **e_server** single-page site + JSON
 API as `app/wifi_http_server`, but over wired Ethernet - no WiFi module.
 
 Ported from the STM32F769I-Discovery `eth_http` project and the vendor F429
 `42-ETH-LWIP` LAN8720A examples.
+
+> **lwIP version**: the ETH server uses the plain **lwIP STABLE-2_2_1**
+> vendored in `drivers/lwip` (a clean release, unified `include/` layout).
+> The WiFi apps keep the **WICED fork (2.0.3)** under `drivers/wifi_ap6181`
+> because the AP6181 SDK requires it - the two can coexist.
 
 ## Wiring (RMII, fire-f429)
 
@@ -31,12 +36,30 @@ the BCR software reset suffices).
 
 1. `main()` sets up the 180 MHz clock, UART, and `lwip_init()`.
 2. `Netif_Config()` adds the ETH netif (DHCP by default).
-3. `http_server_init()` binds a raw-API TCP listener on port 80.
+3. `http_server_start()` binds a raw-API TCP listener on port 80 (after DHCP).
 4. The main loop:
    - `ethernetif_input()` polls received frames into lwIP,
    - `sys_check_timeouts()` runs the lwIP timers,
+   - `http_stream_poll()` feeds the MJPEG stream,
    - `Ethernet_Link_Periodic_Handle()` / `DHCP_Periodic_Handle()` drive the
      PHY link check and DHCP state machine.
+
+## TCP configuration notes (why the page used to hang)
+
+- **Window scaling is required**: `tcpwnd_size_t` is `u16` unless
+  `LWIP_WND_SCALE` is set, and `TCP_SND_BUF = 64 KB = 65536` wraps to **0**
+  (the build emitted `-Woverflow`). `pcb->snd_buf` then starts at 0 and
+  **every `tcp_write()` fails with `ERR_MEM`** - ICMP ping still works, but
+  no TCP response is ever sent (browser hangs on `http://<ip>/`).
+  `LWIP_WND_SCALE 1` (+ `TCP_RCV_SCALE 0`) makes the send buffer `u32`.
+- `TCP_WND = 12*MSS` (was 2*MSS) keeps the sender pipelined.
+- `MEM_SIZE = 80 KB` so a full QVGA JPEG frame (20-60 KB) can be copied
+  into the lwIP heap by `/capture` and `/stream`.
+- The old 500 ms **RMII watchdog** in `main.c` (re-selecting
+  `SYSCFG->PMC` MII/RMII while the MAC was running) is removed - it glitched
+  the 50 MHz RMII reference clock and dropped the PHY link during idle gaps
+  (the LINK LED blinked). RMII is now re-latched only in the link-up path
+  (`eth_rmii_relatch()`, MAC stopped).
 
 The ETH DMA descriptors / RX buffers / TX bounce live in **internal SRAM**
 (`.sram_dma`) - the F429 has no D-cache, so CPU<->DMA are coherent with no
@@ -139,10 +162,11 @@ If DHCP times out it falls back to the static IP in `src/main.h`
   `http_server_start` after DHCP; `/stream` + `/capture` MJPEG)
 - `src/ov5640.c/h` - OV5640 driver (SCCB, JPEG QVGA config, DCMI+DMA ring,
   frame extraction, boot self-test)
-- `src/lwipopts.h` - lwIP NO_SYS configuration
+- `src/lwipopts.h` - lwIP NO_SYS configuration (WND_SCALE, 64 KB snd buf)
 - `src/main.h` - MAC address + static fallback IP
 - `src/arch/cc.h` - lwIP compiler/arch config (NO_SYS)
 - `src/web_assets.h` - generated site bundle
+- `../../drivers/lwip` - vendored lwIP STABLE-2_2_1 (core + netif only)
 
 ## Build and flash
 

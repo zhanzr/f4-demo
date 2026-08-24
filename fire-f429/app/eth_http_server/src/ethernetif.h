@@ -17,4 +17,7 @@ void  ethernetif_input(struct netif *netif);
 /* Check the PHY link state and (re)start the MAC (call periodically). */
 void ethernet_link_check_state(struct netif *netif);
 
+/* Re-latch the RMII interface selection (MAC must be stopped). */
+void eth_rmii_relatch(void);
+
 #endif /* __ETHERNETIF_H__ */
