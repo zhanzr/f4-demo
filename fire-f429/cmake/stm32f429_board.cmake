@@ -74,6 +74,7 @@ function(stm32f429_apply_board TGT OPT)
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_i2s_ex.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_dma_ex.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_i2c.c
+        ${STM32F4_HAL_SRC}/stm32f4xx_hal_eth.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_tim.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_tim_ex.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_ltdc.c

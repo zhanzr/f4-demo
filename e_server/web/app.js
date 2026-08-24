@@ -183,7 +183,25 @@ function drawPlot(p) {
 
   const padL = 6, padR = 8, padT = 6, padB = 16;
   const pw = w - padL - padR, ph = h - padT - padB;
-  const span = p.max - p.min;
+
+  /* Auto-scale the y-range to the buffered data (with padding) so a plot
+   * always shows its line no matter the signal's range (e.g. the motion
+   * channels can sit near 0 g or near ±1 g depending on how the board is
+   * held). Falls back to the configured min/max while there is no data. */
+  let lo = p.min, hi = p.max;
+  const buf = p.buf, n = buf.length;
+  if (n > 0) {
+    let dlo = buf[0], dhi = buf[0];
+    for (let i = 1; i < n; i++) {
+      if (buf[i] < dlo) dlo = buf[i];
+      if (buf[i] > dhi) dhi = buf[i];
+    }
+    let pad = (dhi - dlo) * 0.15;
+    if (pad < 1e-6) pad = Math.max(Math.abs(dlo) * 0.1 + 1e-3, 1e-3); /* flat */
+    lo = dlo - pad;
+    hi = dhi + pad;
+  }
+  const span = hi - lo;
 
   /* grid */
   ctx.strokeStyle = '#232a37';
@@ -196,22 +214,21 @@ function drawPlot(p) {
     ctx.stroke();
   }
 
-  /* axis labels */
+  /* axis labels (dynamic min/max) */
   ctx.fillStyle = '#8b93a7';
   ctx.font = '10px monospace';
   ctx.textAlign = 'left';
-  ctx.fillText(p.max.toFixed(p.dec), padL, padT - 3);
-  ctx.fillText(p.min.toFixed(p.dec), padL, h - padB + 10);
+  ctx.fillText(hi.toFixed(p.dec), padL, padT - 3);
+  ctx.fillText(lo.toFixed(p.dec), padL, h - padB + 10);
 
   /* series */
-  const buf = p.buf, n = buf.length;
   if (n >= 2) {
     ctx.strokeStyle = '#4ea1ff';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
       const x = padL + (i / (MAX_SAMPLES - 1)) * pw;
-      const y = padT + ph - ((buf[i] - p.min) / span) * ph;
+      const y = padT + ph - ((buf[i] - lo) / span) * ph;
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.stroke();
