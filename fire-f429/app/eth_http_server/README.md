@@ -95,7 +95,7 @@ BMP, so the RGB565 frames are converted in software):
 - **DCMI** data bus: HSYNC PA4, PIXCLK PA6, VSYNC PI5, D0..D7 on
   PH9/PH10/PH11/PH12/PH14, PD3, PI6, PI7. PWDN on PG3, RST on PG2
   (the 挑战者 F429 core board wires RST to PG2 - the F429IG-V1V2 example's
-  PB5 must not be used here).
+  reset pin mapping must not be used here).
 - The sensor runs **RGB565 at QQVGA (160x120)** - the vendor-proven stable
   mode (the vendor examples all use RGB565; the built-in JPEG encoder does
   not produce valid output through the F4 DCMI on this module - VSYNC fires

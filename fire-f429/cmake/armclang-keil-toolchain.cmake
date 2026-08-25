@@ -19,6 +19,11 @@
 
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR cortex-m4)
+# CMake 3.20's ARMClang module appends "-march=${CMAKE_SYSTEM_ARCH}" when the
+# policy CMP0123 is unavailable; with an empty CMAKE_SYSTEM_ARCH that yields
+# a bare "-march=" (armclang error). Give it the correct architecture so any
+# auto-appended flag is valid (armclang then just warns about -mcpu + -march).
+set(CMAKE_SYSTEM_ARCH armv7e-m)
 
 # CMake 3.30's ARMClang support wants the cpu/arch flags handled explicitly;
 # we pass them ourselves (-mcpu=...) and link with GNU ld, so suppress the
