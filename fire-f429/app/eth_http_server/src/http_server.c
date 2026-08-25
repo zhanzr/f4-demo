@@ -354,11 +354,12 @@ static void api_camera(struct http_conn *c)
  * do not render 16-bit BMP, so we convert to 24-bit RGB).
  * ------------------------------------------------------------------------ */
 #define BMP_HDR_LEN  54
-#define BMP_STRIDE   (OV5640_FRAME_W * 3U)                      /* 480 */
-#define BMP_IMG_SIZE (BMP_STRIDE * OV5640_FRAME_H)              /* 57600 */
-#define BMP_TOT_SIZE (BMP_HDR_LEN + BMP_IMG_SIZE)               /* 57654 */
+#define BMP_STRIDE   (OV5640_FRAME_W * 3U)                      /* 960 */
+#define BMP_IMG_SIZE (BMP_STRIDE * OV5640_FRAME_H)              /* 230400 */
+#define BMP_TOT_SIZE (BMP_HDR_LEN + BMP_IMG_SIZE)               /* 230454 */
 
-static uint8_t bmp_rgb[BMP_TOT_SIZE];   /* 54-byte header + 24-bit pixels */
+/* 54-byte header + 24-bit QVGA pixels (in .bss -> SDRAM on this board). */
+static uint8_t bmp_rgb[BMP_TOT_SIZE];
 
 /* Build a 24-bit BMP header (top-down rows, no padding). */
 static void bmp_header(uint8_t *h)
@@ -446,6 +447,52 @@ static void stream_err(void *arg, err_t err)
   g_stream_pcb = NULL;
 }
 
+/* A stream frame part = segment[0] (part header) + segment[1] (BMP body) +
+ * segment[2] (boundary). The part can be much larger than the lwIP send
+ * buffer (QVGA BMP = 230 KB vs 64 KB TCP_SND_BUF), so it is queued in
+ * chunks gated by the send buffer and paced by tcp_sent. */
+#define STREAM_NSEG  3
+static const uint8_t *g_seg[STREAM_NSEG];
+static u16_t          g_seg_len[STREAM_NSEG];
+static u8_t           g_seg_idx;      /* 0..2, STREAM_NSEG = idle */
+static u16_t          g_seg_off;
+
+static void stream_send_more(void);
+
+static err_t stream_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
+{
+  (void)arg; (void)pcb; (void)len;
+  stream_send_more();
+  return ERR_OK;
+}
+
+static void stream_send_more(void)
+{
+  if (g_stream_pcb == NULL) return;
+
+  while (g_seg_idx < STREAM_NSEG)
+  {
+    if (g_seg_off >= g_seg_len[g_seg_idx])
+    {
+      g_seg_idx++;
+      g_seg_off = 0;
+      continue;
+    }
+    u16_t avail = tcp_sndbuf(g_stream_pcb);
+    if (avail < 128U) break;                  /* wait for tcp_sent */
+    u16_t chunk = (u16_t)(g_seg_len[g_seg_idx] - g_seg_off);
+    if (chunk > avail) chunk = avail;
+    if (tcp_write(g_stream_pcb, g_seg[g_seg_idx] + g_seg_off, chunk,
+                  TCP_WRITE_FLAG_COPY) != ERR_OK)
+    {
+      stream_close();
+      return;
+    }
+    g_seg_off += chunk;
+  }
+  if (g_stream_pcb) tcp_output(g_stream_pcb);
+}
+
 /* GET /stream: convert this connection into the live MJPEG stream. */
 static void api_stream(struct http_conn *c)
 {
@@ -467,7 +514,7 @@ static void api_stream(struct http_conn *c)
   /* Detach the http_conn bookkeeping; we manage the pcb directly now. */
   tcp_arg(pcb, NULL);
   tcp_recv(pcb, stream_recv);
-  tcp_sent(pcb, NULL);
+  tcp_sent(pcb, stream_sent);
   tcp_err(pcb, stream_err);
   mem_free(c);
 
@@ -481,6 +528,7 @@ static void api_stream(struct http_conn *c)
   tcp_write(pcb, hdr, (u16_t)hn, TCP_WRITE_FLAG_COPY);
 
   g_stream_pcb = pcb;
+  g_seg_idx = STREAM_NSEG;   /* no part pending */
   tcp_output(pcb);
 }
 
@@ -534,51 +582,43 @@ static void api_capture(struct http_conn *c)
   if (c->done) http_conn_close(c);
 }
 
-/* Feed the active stream from the main loop (drop frames if the send
- * buffer is full - the browser just shows the latest). */
+/* Feed the active stream from the main loop. One complete frame part (part
+ * header + QVGA BMP + boundary) is queued in chunks; new frames are dropped
+ * while the previous part is still being sent - the browser just shows the
+ * latest. */
 void http_stream_poll(void)
 {
   const uint8_t *frame;
   uint32_t len;
-  char part[64];
-  int pn;
+  static char part[80];
+  static const char boundary[] = "\r\n--" STREAM_BOUNDARY "\r\n";
 
   /* Recover a quiet sensor even when nobody is streaming. */
   OV5640_HealthCheck();
 
   if (g_stream_pcb == NULL || !OV5640_Ready()) return;
 
-  if (!OV5640_GetFrame(&frame)) return;
+  /* Previous part still being queued - drop this frame. */
+  if (g_seg_idx < STREAM_NSEG) return;
 
-  /* Only send if the whole part fits, so the buffer never fills. */
-  if ((uint32_t)tcp_sndbuf(g_stream_pcb) < BMP_TOT_SIZE + 80U) return;
+  if (!OV5640_GetFrame(&frame)) return;
 
   /* Convert RGB565 -> 24-bit BMP. */
   len = frame_to_bmp(frame, bmp_rgb);
 
-  pn = snprintf(part, sizeof(part),
-                "Content-Type: image/bmp\r\nContent-Length: %lu\r\n\r\n",
-                (unsigned long)len);
-  if (tcp_write(g_stream_pcb, part, (u16_t)pn, TCP_WRITE_FLAG_COPY) != ERR_OK)
-  {
-    stream_close();
-    return;
-  }
+  int pn = snprintf(part, sizeof(part),
+                    "Content-Type: image/bmp\r\nContent-Length: %lu\r\n\r\n",
+                    (unsigned long)len);
+  g_seg[0] = (const uint8_t *)part;
+  g_seg_len[0] = (u16_t)pn;
+  g_seg[1] = bmp_rgb;
+  g_seg_len[1] = (u16_t)len;
+  g_seg[2] = (const uint8_t *)boundary;
+  g_seg_len[2] = (u16_t)(sizeof(boundary) - 1U);
+  g_seg_idx = 0;
+  g_seg_off = 0;
 
-  if (tcp_write(g_stream_pcb, bmp_rgb, (u16_t)len, TCP_WRITE_FLAG_COPY) != ERR_OK)
-  {
-    stream_close();
-    return;
-  }
-
-  if (tcp_write(g_stream_pcb, "\r\n--" STREAM_BOUNDARY "\r\n",
-                (u16_t)(sizeof("\r\n--" STREAM_BOUNDARY "\r\n") - 1),
-                TCP_WRITE_FLAG_COPY) != ERR_OK)
-  {
-    stream_close();
-    return;
-  }
-  tcp_output(g_stream_pcb);
+  stream_send_more();
 }
 
 static void api_info(struct http_conn *c)

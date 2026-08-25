@@ -86,6 +86,10 @@ OV5640 ID OK: 5640
 ```
 - Live: `snap_buf` + both ping-pong FBs update continuously; display FPS
   line counts ~7-10 frames/s; text renders clean at the left; no smearing.
+- The FPS line is space-padded (`Frames:  5 FPS`, `Frames: 12 FPS`) and the
+  build uses `-O3` with a non-volatile 2-pixels-per-32-bit-store blit (the
+  LTDC reads SDRAM directly; F4 has no cache) - faster than the previous
+  `-O2` + volatile 16-bit-store blit.
 
 The reference `ov5640_to_st7789` project on the STM32H750 uses the same
 pattern (small frame + private buffer + frame-flag + display copy) - that is

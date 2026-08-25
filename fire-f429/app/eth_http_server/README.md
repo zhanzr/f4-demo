@@ -96,29 +96,36 @@ BMP, so the RGB565 frames are converted in software):
   PH9/PH10/PH11/PH12/PH14, PD3, PI6, PI7. PWDN on PG3, RST on PG2
   (the 挑战者 F429 core board wires RST to PG2 - the F429IG-V1V2 example's
   reset pin mapping must not be used here).
-- The sensor runs **RGB565 at QQVGA (160x120)** - the vendor-proven stable
-  mode (the vendor examples all use RGB565; the built-in JPEG encoder does
-  not produce valid output through the F4 DCMI on this module - VSYNC fires
-  at ~200 Hz with only ~200 bytes/frame captured and no complete SOI/EOI
-  frames; the markers that appear match random chance). Sustained rate
-  measured on hardware: **~19 fps, all frames distinct**.
-- DCMI runs in **normal (non-JPEG) mode** with DMA2 Stream1 (circular) into
-  a 115200-byte internal-SRAM ring (`.sram_dma`, exactly 3 frame slots so a
-  frame never straddles the ring end). `OV5640_GetFrame()` hands out
-  fixed-size frames by tracking the DMA write position (with wrap-resync);
-  `http_stream_poll()` converts each frame to a 24-bit BMP
-  (`frame_to_bmp()`, header + BGR pixels) and pushes it to the active
-  `/stream` client; `/capture` serves one BMP with `Content-Length`.
-- A DMA-write-position watchdog restarts the capture if the DMA freezes
-  for 2 s (RGB565 is stable, so this is just a safety net - and it tracks
-  the DMA, not consumed frames, so an idle stream never false-triggers).
+- The sensor runs **RGB565 at QVGA (320x240)** - the stable capture mode
+  proven by `app/ov5640_to_lcd_clone` (the built-in JPEG encoder does not
+  produce valid output through the F4 DCMI on this module). The stream is
+  **4x sharper** than the old QQVGA 160x120.
+- DCMI runs in **normal (non-JPEG) mode** with **SNAPSHOT capture**: DMA2
+  Stream1 (normal mode) transfers ONE complete QVGA frame per snapshot into
+  a 153600-byte internal-SRAM buffer (`.sram_dma`; the frame fits a single
+  DMA buffer, avoiding the newer HAL's flaky >0xFFFF double-buffer path).
+  `OV5640_GetFrame()` hands out the latest snapshot and re-arms the next
+  capture (clean `HAL_DCMI_Stop` + fresh start - the resume-then-start
+  window would let the DCMI overrun its FIFO and stall the re-arm).
+  `http_stream_poll()` converts each frame to a 24-bit BMP (`frame_to_bmp()`,
+  header + BGR pixels) and streams it to `/stream` in **chunks** (a QVGA BMP
+  is 230 KB > the 64 KB `TCP_SND_BUF`, so the part is queued segment by
+  segment paced by `tcp_sent`); `/capture` serves one BMP via `conn_send`.
+- The HAL handles live in `.sram_dma` (internal SRAM) - this app's `.bss`
+  sits in SDRAM, and the DCMI/DMA interrupt paths touch them from IRQ
+  context. They are zeroed at init (`.sram_dma` is NOLOAD).
+- A request-aware health watchdog re-inits the camera only while a client
+  is actively polling for frames (an idle server never false-triggers).
 
 Boot console (camera):
 
 ```
-OV5640: ready (RGB565 160x120)
-OV5640: selftest OK - N RGB565 frames (160x120), F fps
+OV5640: ready (RGB565 320x240)
+OV5640: selftest OK - N RGB565 frames (320x240), F fps
 ```
+
+Measured on hardware: **~14 fps capture, ~8 fps QVGA BMP streamed** (the
+stream rate is bounded by the 64 KB send buffer + ACK pacing).
 
 ## Web assets
 

@@ -44,21 +44,27 @@ uint8_t fps = 0;
 
 /* ------------------------------------------------------------------ */
 /* Blit one QVGA 320x240 RGB565 snapshot into an 800x480 RGB565 display
- * framebuffer, nearest-neighbour 2.5x H / 2x V (sx = x*2/5, sy = y/2). */
+ * framebuffer, nearest-neighbour 2.5x H / 2x V (sx = x*2/5, sy = y/2).
+ * Two output pixels are written per 32-bit store (SDRAM stores are the
+ * bottleneck; the LTDC reads SDRAM directly - F4 has no cache, so the
+ * buffer is deliberately NOT volatile, letting gcc combine the stores). */
 
 static void blit_snap(uint32_t fb)
 {
-    volatile uint16_t *dst = (volatile uint16_t *)fb;
+    uint32_t *dst = (uint32_t *)fb;
     const uint8_t *src = snap_buf;
 
     for (uint16_t y = 0; y < 480; y++)
     {
-        const uint8_t *srow = src + (uint32_t)(y / 2) * 640U;   /* 320*2 */
-        volatile uint16_t *drow = dst + (uint32_t)y * 800U;
-        for (uint16_t x = 0; x < 800; x++)
+        const uint8_t *srow = src + (uint32_t)(y >> 1) * 640U;  /* 320*2 */
+        uint32_t *drow = dst + (uint32_t)y * 400U;              /* 800/2 */
+        for (uint16_t x = 0; x < 800; x += 2)
         {
-            uint32_t sx = ((uint32_t)x * 2U) / 5U;              /* 0..319 */
-            drow[x] = (uint16_t)(srow[sx * 2U] | ((uint16_t)srow[sx * 2U + 1U] << 8));
+            uint32_t sx0 = ((uint32_t)x * 2U) / 5U;
+            uint32_t sx1 = ((uint32_t)(x + 1) * 2U) / 5U;
+            uint16_t p0 = (uint16_t)(srow[sx0 * 2U] | ((uint16_t)srow[sx0 * 2U + 1U] << 8));
+            uint16_t p1 = (uint16_t)(srow[sx1 * 2U] | ((uint16_t)srow[sx1 * 2U + 1U] << 8));
+            drow[x >> 1] = (uint32_t)p0 | ((uint32_t)p1 << 16);
         }
     }
 }
@@ -72,9 +78,25 @@ static void draw_fps_line(uint8_t line, uint32_t frames)
     uint8_t n = 0;
     const char *h = "Frames:";
     while (*h != '\0') { buf[n++] = *h++; }
-    buf[n++] = (char)('0' + (frames / 100U) % 10U);
-    buf[n++] = (char)('0' + (frames / 10U) % 10U);
-    buf[n++] = (char)('0' + frames % 10U);
+    /* 3-wide, space-padded, right-aligned: "  5", " 12", "123". */
+    if (frames >= 100U)
+    {
+        buf[n++] = (char)('0' + (frames / 100U) % 10U);
+        buf[n++] = (char)('0' + (frames / 10U) % 10U);
+        buf[n++] = (char)('0' + frames % 10U);
+    }
+    else if (frames >= 10U)
+    {
+        buf[n++] = ' ';
+        buf[n++] = (char)('0' + (frames / 10U) % 10U);
+        buf[n++] = (char)('0' + frames % 10U);
+    }
+    else
+    {
+        buf[n++] = ' ';
+        buf[n++] = ' ';
+        buf[n++] = (char)('0' + frames % 10U);
+    }
     buf[n++] = ' '; buf[n++] = 'F'; buf[n++] = 'P'; buf[n++] = 'S';
     buf[n] = '\0';
 

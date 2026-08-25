@@ -44,7 +44,7 @@ add_executable(${PROJECT_NAME}.elf
 )
 target_include_directories(${PROJECT_NAME}.elf PRIVATE ../../board src)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f429_board.cmake)
-stm32f429_apply_board(${PROJECT_NAME}.elf "-O2")
+stm32f429_apply_board(${PROJECT_NAME}.elf "-O3")
 
 # bsp_i2c.c uses the I2C analog-filter API - the shared board layer does not
 # compile this HAL source, so add it for this app.

@@ -25,39 +25,44 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* RGB565 frame geometry (QQVGA - the vendor's stable 15 fps mode). */
-#define OV5640_FRAME_W       160U
-#define OV5640_FRAME_H       120U
-#define OV5640_FRAME_BYTES   (OV5640_FRAME_W * OV5640_FRAME_H * 2U)  /* 38400 */
+/* RGB565 frame geometry (QVGA 320x240 - the stable capture mode, same as
+ * app/ov5640_to_lcd_clone: the frame fits a single DMA buffer <= 0xFFFF
+ * words, so DCMI SNAPSHOT captures one complete, aligned frame per
+ * transfer - no newer-HAL double-buffer path, no tearing). */
+#define OV5640_FRAME_W       320U
+#define OV5640_FRAME_H       240U
+#define OV5640_FRAME_BYTES   (OV5640_FRAME_W * OV5640_FRAME_H * 2U)  /* 153600 */
 
-/* Ring buffer (internal SRAM for DMA2) = exactly 3 frame slots so frames
- * are always aligned (never straddle the ring end). */
-#define OV5640_FRAME_BUF_SIZE  (3U * OV5640_FRAME_BYTES)   /* 115200 */
+/* Snapshot buffer (internal SRAM for DMA2) = exactly one QVGA frame. The
+ * DMA writes it once per snapshot transfer and stops; the consumer re-arms
+ * the next capture after taking the frame. */
+#define OV5640_FRAME_BUF_SIZE  OV5640_FRAME_BYTES
 
 /* OV5640 SCCB address (7-bit 0x3C -> 8-bit write 0x78). */
 #define OV5640_SCCB_ADDR        0x78U
 
 /* Init the camera: power-on/reset, SCCB (I2C1), read ID, configure RGB565
- * QQVGA, and start the DCMI+DMA continuous capture. Returns 0 on success. */
+ * QVGA, and arm the first DCMI snapshot capture. Returns 0 on success. */
 int  OV5640_Init(void);
 
-/* Get the next complete RGB565 frame from the ring buffer (fixed size
- * OV5640_FRAME_BYTES). Returns 1 and sets *frame, or 0 if none available
- * yet. The returned pointer is valid until the next call. */
+/* Get the latest complete RGB565 snapshot (fixed size OV5640_FRAME_BYTES)
+ * and re-arm the next capture. Returns 1 and sets *frame, or 0 if a frame
+ * is not ready yet. The returned pointer is valid until the next frame
+ * completes (i.e. until the next successful OV5640_GetFrame). */
 int OV5640_GetFrame(const uint8_t **frame);
 
 /* True once the camera is initialized and frames are flowing. */
 int OV5640_Ready(void);
 
-/* Total frames found since boot (for status polling). */
+/* Total frames handed out since boot (for status polling). */
 uint32_t OV5640_FrameCount(void);
 
 /* Health watchdog: if the sensor goes quiet (no frame for a while),
  * power-cycle + reconfigure it. Call periodically from the main loop. */
 void OV5640_HealthCheck(void);
 
-/* Boot-time diagnostic: waits ~2.5 s, reports DCMI frame events, JPEG
- * frames found, and ring content (prints to the debug UART). */
+/* Boot-time diagnostic: waits ~1.5 s, reports how many snapshot frames were
+ * captured (prints to the debug UART). */
 void OV5640_Selftest(void);
 
 #endif /* __OV5640_H__ */

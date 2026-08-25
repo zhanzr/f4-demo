@@ -36,6 +36,16 @@ ImageFormat_TypeDef ImageFormat;
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 
+/*
+ * NOTE: These register tables intentionally use a compact flat {addr, val} pair
+ * layout. GCC's -Wmissing-braces (part of -Wall) suggests wrapping each pair in
+ * inner braces; we keep the flat form and scope-suppress the style warning.
+ */
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-braces"
+#endif
+
 unsigned short RGB565_Init[][2]=
 
 {
@@ -828,6 +838,11 @@ unsigned short RGB565_WVGA[][2]=
 //    0x4741, 0x00,
 
 };
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 /**
   * @brief  初始化控制摄像头使用的GPIO(I2C/DCMI)
   * @param  None
