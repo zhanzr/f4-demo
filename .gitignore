@@ -26,3 +26,4 @@ Thumbs.db
 
 # WiFi credentials (never commit)
 **/wifi_config.h
+*_log*.txt
