@@ -5,8 +5,8 @@
  * Talks to the reference (and embedded) C backend over relative /api paths.
  * ------------------------------------------------------------------------ */
 
-async function getJSON(url) {
-  const r = await fetch(url, { cache: 'no-store' });
+async function getJSON(url, signal) {
+  const r = await fetch(url, { cache: 'no-store', signal });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 }
@@ -39,6 +39,7 @@ function showTab(name) {
   });
   if (name === 'led') loadLeds();
   if (name === 'sensor') { startAdc(); redrawAll(); }
+  else stopAdc();                    /* poll sensors only while the tab is open */
   if (name === 'camera') loadCamera();
   if (name === 'board') loadBoardInfo();
 }
@@ -118,6 +119,10 @@ const plots = {
 
 let adcTimer = null;
 let lastAdc = null;
+let adcGen = 0;                  /* sampling-session generation; bumped on
+                                    every start/stop so in-flight samples from
+                                    an older session are discarded */
+let adcInFlight = null;          /* AbortController of the pending request */
 
 const intervalSel = document.getElementById('adc-interval');
 
@@ -125,17 +130,20 @@ function adcIntervalMs() { return parseInt(intervalSel.value, 10); }
 
 function startAdc() {
   stopAdc();
-  adcTimer = setInterval(sampleAdc, adcIntervalMs());
-  sampleAdc();
+  const gen = ++adcGen;
+  adcTimer = setInterval(() => sampleAdc(gen), adcIntervalMs());
+  sampleAdc(gen);
 }
 
 function stopAdc() {
+  adcGen++;                      /* invalidate any in-flight sample */
   if (adcTimer) { clearInterval(adcTimer); adcTimer = null; }
+  if (adcInFlight) { adcInFlight.abort(); adcInFlight = null; }
 }
 
 intervalSel.addEventListener('change', () => {
   try { localStorage.setItem('adc-interval', intervalSel.value); } catch (e) {}
-  if (adcTimer) { startAdc(); }
+  if (adcTimer) { startAdc(); }  /* restart the timer with the new interval */
 });
 
 function pushSample(key, val) {
@@ -147,13 +155,28 @@ function pushSample(key, val) {
   if (p.buf.length > MAX_SAMPLES) p.buf.shift();
 }
 
-async function sampleAdc() {
+async function sampleAdc(gen) {
+  if (gen !== adcGen) return;    /* session stopped or restarted */
+  if (adcInFlight) return;       /* previous request still pending (e.g. the
+                                    server is offline): skip this tick instead
+                                    of piling up requests that would all fire
+                                    at once when the server comes back */
+  const ctl = new AbortController();
+  adcInFlight = ctl;
   let v;
   try {
-    v = await getJSON('/api/adc');
-  } catch (e) {
-    v = lastAdc;                  /* timeout / no data: use previous values */
+    const to = setTimeout(() => ctl.abort(), adcIntervalMs() * 2);
+    try {
+      v = await getJSON('/api/adc', ctl.signal);
+    } catch (e) {
+      v = null;                  /* failed / aborted: no sample this tick */
+    } finally {
+      clearTimeout(to);
+    }
+  } finally {
+    if (adcInFlight === ctl) adcInFlight = null;
   }
+  if (gen !== adcGen) return;    /* stopped/restarted while awaiting */
   if (!v) return;
   lastAdc = v;
   /* VBAT is in volts (`vbat_v`); tolerate an old `vbat_mv` (millivolts). */

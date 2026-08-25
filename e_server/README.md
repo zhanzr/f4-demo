@@ -37,8 +37,10 @@ and projects embed it by pointing the packer at their own output path, e.g.
    an IMU (motion_x / motion_y / motion_z) and a DHT11 (temperature /
    humidity). A dropdown picks the sample interval: 1 s (default), 2 s, 4 s;
    the choice is persisted in `localStorage`. Samples are polled only while
-   the tab is open; on timeout/error the previous value is kept and the
-   series continues.
+   the tab is open (leaving the tab stops the timer and aborts any pending
+   request). At most one request is in flight at a time, so the selected
+   interval is always respected; on timeout/error the tick is skipped and
+   the last value stays on screen.
 3. **Camera** - placeholder for the future DVI camera feed; polls
    `/api/camera` and shows the source status.
 4. **Board info** - architecture, LAN IP, public IP, geo location and weather
