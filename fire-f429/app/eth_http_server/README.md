@@ -40,7 +40,7 @@ the BCR software reset suffices).
 4. The main loop:
    - `ethernetif_input()` polls received frames into lwIP,
    - `sys_check_timeouts()` runs the lwIP timers,
-   - `http_stream_poll()` feeds the BMP camera stream,
+   - `http_stream_poll()` feeds the JPEG camera stream,
    - `Ethernet_Link_Periodic_Handle()` drives the PHY link check.
 
 ## TCP configuration notes (why the page used to hang)
@@ -73,9 +73,9 @@ POST /api/leds         body {"leds":[0]}  -> applies to the LED
 GET  /api/adc          {"vrefint_mv":..,"temp_c":..,"vbat_v":..,
                         "motion_x":..,"motion_y":..,"motion_z":..,
                         "dht11_t":..,"dht11_h":..,"ts":..}
-GET  /api/camera       {"source":"ov5640-rgb565","ready":1,"w":160,"h":120,"frames":N,"ts":..}
-GET  /stream           live stream (multipart/x-mixed-replace, 24-bit BMP parts)
-GET  /capture          one frame (image/bmp, Content-Length)
+GET  /api/camera       {"source":"ov5640-jpeg","ready":1,"w":320,"h":240,"frames":N,"ts":..}
+GET  /stream           live stream (multipart/x-mixed-replace, image/jpeg parts)
+GET  /capture          one frame (image/jpeg, Content-Length)
 GET  /api/info         {"arch","lan_ip","public_ip":null,"geo":null,
                         "weather":null}
 GET  /public/<name>    raw image bytes (from the embedded_files[] table)
@@ -84,11 +84,14 @@ GET  /public/<name>    raw image bytes (from the embedded_files[] table)
 The `public_ip` / `geo` / `weather` fields are `null` (the page shows "N/A")
 because the board has no HTTP/TLS client.
 
-## Camera (OV5640 RGB565 / BMP)
+## Camera (OV5640 native JPEG)
 
-The on-board **OV5640** streams live images over the web as **24-bit BMP**
-(universally renderable in browsers; Chrome/Firefox do not render 16-bit
-BMP, so the RGB565 frames are converted in software):
+The on-board **OV5640** streams live **JPEG** images: the sensor's built-in
+JPEG encoder is enabled and the raw `image/jpeg` bytes are served directly
+(no RGB565 -> BMP conversion - ~10x less bandwidth than the previous 230 KB
+BMP frames). This was hardware-verified by `app/jpeg_test` on this board's
+"FD5640" module (valid JFIF: `FF D8 FF E0 'JFIF' ... FF DB ... FF DA ...
+FF D9`).
 
 - **SCCB** control on I2C1 (PB6/PB7 - shared with the MPU6050/EEPROM, the
   driver probes the sensor ID 0x56 so the devices coexist).
@@ -96,21 +99,19 @@ BMP, so the RGB565 frames are converted in software):
   PH9/PH10/PH11/PH12/PH14, PD3, PI6, PI7. PWDN on PG3, RST on PG2
   (the 挑战者 F429 core board wires RST to PG2 - the F429IG-V1V2 example's
   reset pin mapping must not be used here).
-- The sensor runs **RGB565 at QVGA (320x240)** - the stable capture mode
-  proven by `app/ov5640_to_lcd_clone` (the built-in JPEG encoder does not
-  produce valid output through the F4 DCMI on this module). The stream is
-  **4x sharper** than the old QQVGA 160x120.
-- DCMI runs in **normal (non-JPEG) mode** with **SNAPSHOT capture**: DMA2
-  Stream1 (normal mode) transfers ONE complete QVGA frame per snapshot into
-  a 153600-byte internal-SRAM buffer (`.sram_dma`; the frame fits a single
-  DMA buffer, avoiding the newer HAL's flaky >0xFFFF double-buffer path).
-  `OV5640_GetFrame()` hands out the latest snapshot and re-arms the next
-  capture (clean `HAL_DCMI_Stop` + fresh start - the resume-then-start
-  window would let the DCMI overrun its FIFO and stall the re-arm).
-  `http_stream_poll()` converts each frame to a 24-bit BMP (`frame_to_bmp()`,
-  header + BGR pixels) and streams it to `/stream` in **chunks** (a QVGA BMP
-  is 230 KB > the 64 KB `TCP_SND_BUF`, so the part is queued segment by
-  segment paced by `tcp_sent`); `/capture` serves one BMP via `conn_send`.
+- The sensor runs **JPEG at QVGA (320x240)**. JPEG output is enabled by the
+  register list verified in `app/jpeg_test`: `0x3821 bit5` COMPRESSION
+  ENABLE (the crucial bit), `0x4713=0x02` JPEG mode, `0x4300=0x00` YUV,
+  `0x501f=0x30`, `0x3002=0x00`, `0x3006=0xff`, `0x471c=0x50`.
+- JPEG frames are **variable-size**, so the DCMI runs **CONTINUOUS** with a
+  **CIRCULAR DMA ring** (64 KB, `.sram_dma`, internal SRAM): the DMA keeps
+  writing; `OV5640_GetFrame()` scans the ring for the **last complete
+  SOI..EOI frame**, copies it to a linear staging buffer (`jpg_out` in SDRAM)
+  and hands it to the HTTP layer. No re-arm is needed - the capture never
+  stops.
+- `http_stream_poll()` streams the JPEG (`image/jpeg` part) to `/stream` in
+  chunks paced by `tcp_sent` (a QVGA JPEG is 8-20 KB, well under the 64 KB
+  `TCP_SND_BUF`); `/capture` serves one JPEG via `conn_send`.
 - The HAL handles live in `.sram_dma` (internal SRAM) - this app's `.bss`
   sits in SDRAM, and the DCMI/DMA interrupt paths touch them from IRQ
   context. They are zeroed at init (`.sram_dma` is NOLOAD).
@@ -120,12 +121,14 @@ BMP, so the RGB565 frames are converted in software):
 Boot console (camera):
 
 ```
-OV5640: ready (RGB565 320x240)
-OV5640: selftest OK - N RGB565 frames (320x240), F fps
+OV5640: init ok (attempt 1, JPEG 320x240, first frame NNNN B)
+OV5640: ready (QVGA 320x240 JPEG)
+OV5640: selftest OK - N JPEG frames (320x240), F fps
 ```
 
-Measured on hardware: **~14 fps capture, ~8 fps QVGA BMP streamed** (the
-stream rate is bounded by the 64 KB send buffer + ACK pacing).
+Measured on hardware: **~14 fps capture, ~8 fps QVGA JPEG streamed at
+8-20 KB/frame** (vs 230 KB/frame BMP - ~10-20x less bandwidth; the frame
+rate is bounded by the ACK pacing, not the camera).
 
 ## Web assets
 
@@ -166,9 +169,9 @@ the listener (no "listening" line). Set your host adapter to the same subnet
 - `src/app_ethernet.c/h` - netif config + link periodic; starts the HTTP
   listener once the link is up (static IP)
 - `src/http_server.c/h` - raw-API HTTP server (`http_server_hw_init` at boot,
-  `http_server_start` on link-up; `/stream` + `/capture` BMP camera)
-- `src/ov5640.c/h` - OV5640 driver (SCCB, RGB565 QQVGA config, DCMI+DMA ring,
-  fixed-size frame extraction, DMA-based stall watchdog, boot self-test)
+  `http_server_start` on link-up; `/stream` + `/capture` JPEG camera)
+- `src/ov5640.c/h` - OV5640 driver (SCCB, JPEG QVGA config, DCMI+DMA circular
+  ring, JPEG SOI/EOI frame extraction, health watchdog, boot self-test)
 - `src/lwipopts.h` - lwIP NO_SYS configuration (WND_SCALE, 64 KB snd buf)
 - `src/main.h` - MAC address + static IP (192.168.5.200)
 - `src/arch/cc.h` - lwIP compiler/arch config (NO_SYS)

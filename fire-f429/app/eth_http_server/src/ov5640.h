@@ -1,15 +1,15 @@
 /**
   * @file    eth_http_server/src/ov5640.h
   * @brief   OV5640 camera driver for the fire-f429 board: DCMI + DMA capture
-  *          of raw RGB565 frames, served as a 24-bit BMP stream.
+  *          of native JPEG frames, served as an MJPEG stream.
   *
-  * The OV5640 runs in RGB565 mode (the vendor-proven stable mode - the
-  * built-in JPEG encoder on this module does not produce valid output
-  * through the F4 DCMI). Frames are QQVGA (160x120, 38400 bytes each).
-  * The DCMI peripheral + DMA2 continuously capture the byte stream into an
-  * internal-SRAM circular buffer (exactly 3 frame slots); a fixed-size
-  * frame parser hands out complete frames. The HTTP layer converts
-  * RGB565 -> RGB888 and serves 24-bit BMP (universally renderable).
+  * The OV5640 runs in JPEG mode (the sensor's built-in encoder; the
+  * "FD5640" module on this board was hardware-verified by app/jpeg_test to
+  * emit valid JFIF JPEG when 0x3821 bit5 = COMPRESSION ENABLE). The DCMI
+  * peripheral + DMA2 capture the byte stream into an internal-SRAM circular
+  * ring (CONTINUOUS mode); a variable-size JPEG frame parser scans the ring
+  * for complete SOI..EOI frames and hands them out. The HTTP layer serves
+  * image/jpeg directly - no RGB565 -> BMP conversion, ~10x less bandwidth.
   *
   * Wiring (fire-f429, same as the vendor 45-OV5640 example):
   *   DCMI_VSYNC -> PI5, DCMI_HSYNC -> PA4, DCMI_PIXCLK -> PA6
@@ -25,31 +25,28 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* RGB565 frame geometry (QVGA 320x240 - the stable capture mode, same as
- * app/ov5640_to_lcd_clone: the frame fits a single DMA buffer <= 0xFFFF
- * words, so DCMI SNAPSHOT captures one complete, aligned frame per
- * transfer - no newer-HAL double-buffer path, no tearing). */
-#define OV5640_FRAME_W       320U
-#define OV5640_FRAME_H       240U
-#define OV5640_FRAME_BYTES   (OV5640_FRAME_W * OV5640_FRAME_H * 2U)  /* 153600 */
+/* JPEG capture ring (internal SRAM, DMA2-acessible): sized so QVGA 320x240
+ * JPEG frames (typically 8-20 KB, up to ~60 KB for very detailed scenes)
+ * fit comfortably; the 192 KB SRAM easily holds this + the ETH DMA ring. */
+#define OV5640_JPEG_RING_SIZE   (64u * 1024u)
 
-/* Snapshot buffer (internal SRAM for DMA2) = exactly one QVGA frame. The
- * DMA writes it once per snapshot transfer and stops; the consumer re-arms
- * the next capture after taking the frame. */
-#define OV5640_FRAME_BUF_SIZE  OV5640_FRAME_BYTES
+/* Sensor geometry (JPEG frames are QVGA 320x240; the compressed size
+ * varies per frame, see OV5640_GetFrame). */
+#define OV5640_FRAME_W          320U
+#define OV5640_FRAME_H          240U
 
 /* OV5640 SCCB address (7-bit 0x3C -> 8-bit write 0x78). */
 #define OV5640_SCCB_ADDR        0x78U
 
-/* Init the camera: power-on/reset, SCCB (I2C1), read ID, configure RGB565
- * QVGA, and arm the first DCMI snapshot capture. Returns 0 on success. */
+/* Init the camera: power-on/reset, SCCB (I2C1), read ID, configure JPEG
+ * QVGA output, and start the CONTINUOUS DCMI + CIRCULAR DMA ring. Returns
+ * 0 on success. */
 int  OV5640_Init(void);
 
-/* Get the latest complete RGB565 snapshot (fixed size OV5640_FRAME_BYTES)
- * and re-arm the next capture. Returns 1 and sets *frame, or 0 if a frame
- * is not ready yet. The returned pointer is valid until the next frame
- * completes (i.e. until the next successful OV5640_GetFrame). */
-int OV5640_GetFrame(const uint8_t **frame);
+/* Get the latest complete JPEG frame (variable size) from the ring. Returns
+ * 1 and sets *frame / *len when a complete SOI..EOI frame is available, or 0
+ * if none yet. The returned pointer is valid until the next call. */
+int OV5640_GetFrame(const uint8_t **frame, uint32_t *len);
 
 /* True once the camera is initialized and frames are flowing. */
 int OV5640_Ready(void);
@@ -57,11 +54,11 @@ int OV5640_Ready(void);
 /* Total frames handed out since boot (for status polling). */
 uint32_t OV5640_FrameCount(void);
 
-/* Health watchdog: if the sensor goes quiet (no frame for a while),
+/* Health watchdog: if the sensor goes quiet (no DMA movement for a while),
  * power-cycle + reconfigure it. Call periodically from the main loop. */
 void OV5640_HealthCheck(void);
 
-/* Boot-time diagnostic: waits ~1.5 s, reports how many snapshot frames were
+/* Boot-time diagnostic: waits ~1.5 s, reports how many JPEG frames were
  * captured (prints to the debug UART). */
 void OV5640_Selftest(void);
 

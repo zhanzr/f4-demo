@@ -2,22 +2,23 @@
   * @file    eth_http_server/src/ov5640.c
   * @brief   OV5640 camera driver (see ov5640.h).
   *
-  * The OV5640 runs in RGB565 mode at QVGA (320x240, 153600 bytes/frame) -
-  * the stable capture mode proven by app/ov5640_to_lcd_clone. (The built-in
-  * JPEG encoder on this module does not produce valid output through the F4
-  * DCMI: VSYNC fires ~200 Hz with only ~200 bytes/frame captured and no
-  * complete SOI/EOI frames - the markers found match random chance.) DCMI
-  * runs in normal (non-JPEG) mode with hardware sync; DMA2 Stream1 captures
-  * ONE complete frame per DCMI SNAPSHOT transfer into a 153600-byte
-  * internal-SRAM buffer (the frame fits a single DMA buffer <= 0xFFFF
-  * words, so the newer HAL's flaky double-buffer path is avoided).
+  * The OV5640 runs in JPEG mode at QVGA (320x240). The sensor's built-in
+  * JPEG encoder is enabled (0x3821 bit5 COMPRESSION ENABLE); this was
+  * hardware-verified by app/jpeg_test on the "FD5640" module of this board
+  * (valid JFIF: FF D8 FF E0 'JFIF' ... FF DB ... FF DA ... FF D9).
   *
-  * OV5640_GetFrame() hands out the latest snapshot and re-arms the next
-  * capture. The HTTP layer converts RGB565 -> RGB888 and serves 24-bit BMP
-  * (universally supported by browsers).
+  * Capture = DCMI CONTINUOUS + DMA2 CIRCULAR ring into internal SRAM. JPEG
+  * frames are VARIABLE-SIZE, so the old fixed-size SNAPSHOT path (which only
+  * works for RGB565 where the buffer == frame) is replaced by a ring: the
+  * DMA keeps writing into a 32 KB circular buffer; OV5640_GetFrame() scans
+  * for a complete SOI..EOI pair and hands out the frame. This is the
+  * app/jpeg_test-proven method.
+  *
+  * The HTTP layer serves the raw JPEG bytes as image/jpeg - no RGB565 ->
+  * BMP conversion, ~10x less bandwidth than the previous 230 KB BMP frames.
   *
   * Register tables are from the vendor fire-f429 OV5640 example (RGB565_Init
-  * + RGB565_QVGA), proven stable on this board.
+  * + RGB565_QVGA geometry) with the output format switched to JPEG.
   * SCCB uses I2C1 (PB6/PB7), same bus as the MPU6050/WM8978 - the driver
   * probes the OV5640 ID (0x56) so the two coexist.
   */
@@ -213,11 +214,12 @@ static const uint16_t ov5640_base_rgb565[][2] = {
 };
 
 /* Vendor RGB565_QVGA extra timing (PLL + line/total timing + exposure) - the
- * proven QVGA config from app/ov5640_to_lcd_clone. */
+ * proven QVGA config from app/ov5640_to_lcd_clone, with the JPEG blocks
+ * enabled (0x3002=0x00, 0x3006=0xff) and JPEG mode set (0x4713). */
 static const uint16_t ov5640_qvga[][2] = {
     {0x3035, 0x41}, {0x3036, 0x72},   /* PLL (24 MHz input) */
     {0x3c07, 0x08},
-    {0x3820, 0x42}, {0x3821, 0x00},   /* flip / mirror */
+    {0x3820, 0x42}, {0x3821, 0x20},   /* flip / mirror + JPEG ENABLE (bit5) */
     {0x3814, 0x31}, {0x3815, 0x31},   /* timing X/Y inc */
     {0x3800, 0x00}, {0x3801, 0x00},   /* HS */
     {0x3802, 0x00}, {0x3803, 0xbe},   /* VS */
@@ -233,9 +235,9 @@ static const uint16_t ov5640_qvga[][2] = {
     {0x3a02, 0x09}, {0x3a03, 0x63},   /* 60Hz max exposure */
     {0x3a14, 0x09}, {0x3a15, 0x63},   /* 50Hz max exposure */
     {0x4004, 0x02},                   /* BLC line number */
-    {0x3002, 0x1c},                   /* reset JFIFO, SFIFO, JPG */
-    {0x3006, 0xc3},                   /* disable JPEG clocks */
-    {0x4713, 0x03},                   /* JPEG mode 3 (RGB565 output) */
+    {0x3002, 0x00},                   /* enable JPEG block (was 0x1c)      */
+    {0x3006, 0xff},                   /* enable JPEG clocks (was 0xc3)     */
+    {0x4713, 0x02},                   /* JPEG mode 2 (was 0x03 RGB565)     */
     {0x4407, 0x04}, {0x460b, 0x35}, {0x460c, 0x22},
     {0x4837, 0x22},                   /* MIPI global timing */
     {0x3824, 0x02},                   /* PCLK manual divider */
@@ -243,21 +245,23 @@ static const uint16_t ov5640_qvga[][2] = {
     {0x3503, 0x00},                   /* AEC/AGC on */
 };
 
-/* RGB565 override table (re-applied by the soft restart): mirrors +
- * format, JPEG blocks off (vendor QVGA values). */
-static const uint16_t ov5640_rgb565_fmt[][2] = {
-    {0x3820, 0x42},   /* vertical flip (vendor QVGA) */
-    {0x3821, 0x00},   /* horizontal mirror (vendor QVGA), JPEG off (bit5=0) */
-    {0x4300, 0x6f},   /* RGB565 */
-    {0x501f, 0x01},   /* RGB565 */
-    {0x3002, 0x1c},   /* JPEG blocks off */
-    {0x3006, 0xc3},   /* JPEG clocks off */
+/* JPEG output override table (re-applied by the soft restart): registers the
+ * JPEG-enable list verified by app/jpeg_test on this module. */
+static const uint16_t ov5640_jpeg_fmt[][2] = {
+    {0x3820, 0x40},   /* vertical flip */
+    {0x3821, 0x20},   /* JPEG/COMPRESSION ENABLE (bit5) - the crucial bit */
+    {0x4713, 0x02},   /* JPEG mode 2 */
+    {0x4300, 0x00},   /* YUV output (JPEG routed via YUV) */
+    {0x501f, 0x30},   /* YUYV */
+    {0x3002, 0x00},   /* enable JPEG block */
+    {0x3006, 0xff},   /* enable JPEG clocks */
+    {0x471c, 0x50},   /* JPEG mode / quant */
 };
 
-/* --- Snapshot buffer + DMA -------------------------------------------------- */
-#define SNAP_WORDS  (OV5640_FRAME_BUF_SIZE / 4U)   /* 38400 words */
+/* --- JPEG ring buffer + DMA ------------------------------------------------ */
+#define RING_WORDS  (OV5640_JPEG_RING_SIZE / 4U)   /* 8192 words (<= 0xFFFF) */
 
-static uint8_t  snap_buf[OV5640_FRAME_BUF_SIZE] __attribute__((section(".sram_dma"), used));
+static uint8_t  snap_buf[OV5640_JPEG_RING_SIZE] __attribute__((section(".sram_dma"), used));
 static volatile int camera_ready;
 static volatile uint8_t OV5640_FrameState;   /* set by the FRAME callback */
 
@@ -285,11 +289,11 @@ void HAL_DCMI_FrameEventCallback(DCMI_HandleTypeDef *h)
 {
     (void)h;
     dcmi_frame_evts++;
-    OV5640_FrameState = 1;      /* a complete snapshot is in snap_buf */
+    OV5640_FrameState = 1;      /* the ring advanced (JPEG frame boundary) */
 }
 
 /* The HAL aborts the DMA on a DCMI sync error or FIFO overflow - capture
- * would silently stop. Record it; OV5640_GetJpegFrame() restarts capture
+ * would silently stop. Record it; the health watchdog restarts capture
  * when it detects the stall (NDTR frozen). */
 void HAL_DCMI_ErrorCallback(DCMI_HandleTypeDef *h)
 {
@@ -326,7 +330,7 @@ static void dcmi_init(void);
 
 static int dcmi_started;           /* non-zero once DCMI+DMA capture runs */
 
-/* Arm one snapshot transfer (DMA stops after the complete frame). A clean
+/* Arm the CONTINUOUS DCMI + CIRCULAR DMA ring capture. A clean
  * HAL_DCMI_Stop clears the DCMI state + FIFO overrun before the next
  * capture, so CAPTURE is only re-enabled by Start_DMA AFTER the DMA is
  * armed - otherwise the DCMI captures into the FIFO without a DMA and
@@ -336,8 +340,8 @@ static HAL_StatusTypeDef ov5640_capture_arm(void)
     HAL_StatusTypeDef st;
     HAL_DCMI_Stop(&hdcmi);
     dcmi_dma_init();
-    st = HAL_DCMI_Start_DMA(&hdcmi, DCMI_MODE_SNAPSHOT,
-                            (uint32_t)snap_buf, SNAP_WORDS);
+    st = HAL_DCMI_Start_DMA(&hdcmi, DCMI_MODE_CONTINUOUS,
+                            (uint32_t)snap_buf, RING_WORDS);
     dcmi_started = 1;
     return st;
 }
@@ -426,7 +430,7 @@ static void dcmi_dma_init(void)
     hdma_dcmi.Init.MemInc              = DMA_MINC_ENABLE;
     hdma_dcmi.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
     hdma_dcmi.Init.MemDataAlignment    = DMA_MDATAALIGN_HALFWORD;
-    hdma_dcmi.Init.Mode                = DMA_NORMAL;    /* snapshot: 1 frame */
+    hdma_dcmi.Init.Mode                = DMA_CIRCULAR;   /* JPEG ring: wraps */
     hdma_dcmi.Init.Priority            = DMA_PRIORITY_HIGH;
     /* FIFO mode (vendor 45-OV5640 example): without it the DCMI's internal
      * FIFO overruns and 99% of the pixel data is dropped (VSYNC fires at
@@ -456,38 +460,110 @@ static void dcmi_init(void)
     hdcmi.Init.HSPolarity       = DCMI_HSPOLARITY_LOW;
     hdcmi.Init.CaptureRate      = DCMI_CR_ALL_FRAME;
     hdcmi.Init.ExtendedDataMode = DCMI_EXTEND_DATA_8B;
-    hdcmi.Init.JPEGMode         = DCMI_JPEG_DISABLE;   /* RGB565 normal mode */
+    hdcmi.Init.JPEGMode         = DCMI_JPEG_ENABLE;   /* 8-bit JPEG stream */
     HAL_DCMI_Init(&hdcmi);
 
-    /* Arm one snapshot capture into snap_buf (single-buffer DMA - the frame
-     * fits <= 0xFFFF words, so no newer-HAL double-buffer path). */
+    /* Start the CONTINUOUS DCMI + CIRCULAR DMA ring. */
     ov5640_capture_arm();
 }
 
-/* --- Frame hand-out (snapshot) -------------------------------------------- */
+/* --- Frame hand-out (JPEG ring) ------------------------------------------- */
+
+/* Linear staging buffer: the newest complete JPEG frame is copied here so
+ * the pointer returned by OV5640_GetFrame is stable until the next call and
+ * a frame straddling the ring wrap (SOI before EOI across the ring end) is
+ * re-assembled contiguously. Lives in .bss (SDRAM on this board) - it is
+ * only read by the CPU after the copy completes (the DMA never touches it),
+ * and the HTTP layer sends it with TCP_WRITE_FLAG_COPY. */
+#define OV5640_MIN_JPEG_LEN  500U     /* reject stray FF D8 / FF D9 noise */
+static uint8_t jpg_out[OV5640_JPEG_RING_SIZE];
 
 static volatile uint32_t g_last_frame_tick;   /* HAL_GetTick() of last frame */
 static volatile uint32_t g_frame_count;       /* frames handed out since boot */
 static volatile uint32_t g_last_get_tick;     /* last GetFrame request       */
 
-/* Hand out the latest complete snapshot and re-arm the next capture. The
- * returned pointer stays valid until the next snapshot completes. */
-int OV5640_GetFrame(const uint8_t **frame)
+/* Scan the whole ring for complete JPEG frames (FF D8 FF ... FF D9) and
+ * copy the LAST one found into out[]. Returns the length (> 0) or 0.
+ * The proven pattern from the earlier MJPEG app (commit c37de5b) - a full
+ * 32 KB scan is ~0.1 ms at 180 MHz, far cheaper than the DMA frame period. */
+static uint32_t jpeg_copy_latest_frame(uint8_t *out)
 {
+    uint32_t size = OV5640_JPEG_RING_SIZE;
+    uint32_t best_off = 0, best_len = 0;
+    uint32_t i = 0;
+
+    while (i + 2 < size)
+    {
+        if (snap_buf[i] == 0xFF && snap_buf[i + 1] == 0xD8 &&
+            snap_buf[i + 2] == 0xFF)
+        {
+            uint32_t j = i + 2;
+            while (j + 1 < size)
+            {
+                if (snap_buf[j] == 0xFF && snap_buf[j + 1] == 0xD9)
+                {
+                    uint32_t flen = (j + 2) - i;
+                    if (flen >= OV5640_MIN_JPEG_LEN)
+                    {
+                        best_off = i;
+                        best_len = flen;
+                    }
+                    i = j + 2;       /* continue after this span */
+                    break;           /* inner loop */
+                }
+                j++;
+            }
+            if (j + 1 >= size)
+            {
+                /* SOI without a complete frame (partial write at ring
+                 * tail): skip past it byte-wise and keep scanning. */
+                i++;
+            }
+        }
+        else
+        {
+            i++;
+        }
+    }
+
+    if (best_len)
+    {
+        memcpy(out, &snap_buf[best_off], best_len);
+        return best_len;
+    }
+    return 0;
+}
+
+/* Hand out the latest complete JPEG frame from the ring. Returns 1 and sets
+ * *frame (points into jpg_out, valid until the next call) and *len, or 0 if
+ * no complete frame is available yet. */
+int OV5640_GetFrame(const uint8_t **frame, uint32_t *len)
+{
+    uint32_t flen;
+
     g_last_get_tick = HAL_GetTick();
 
+    /* Continuous mode fires the FRAME callback (per ring wrap / VSYNC as
+     * the HAL re-enables the FRAME interrupt); if nothing advanced since
+     * the last call, don't rescan the same data. */
     if (!OV5640_FrameState)
     {
-        return 0;   /* capture still in progress */
+        return 0;
     }
     OV5640_FrameState = 0;
 
-    *frame = snap_buf;
+    flen = jpeg_copy_latest_frame(jpg_out);
+    if (flen == 0)
+    {
+        return 0;
+    }
+
+    *frame = jpg_out;
+    *len = flen;
     g_last_frame_tick = HAL_GetTick();
     g_frame_count++;
 
-    /* Re-arm the next snapshot capture (clean stop + fresh start). */
-    (void)ov5640_capture_arm();
+    /* CONTINUOUS capture: no re-arm needed; the DMA keeps writing. */
     return 1;
 }
 
@@ -534,26 +610,27 @@ int OV5640_Ready(void)
 void OV5640_Selftest(void)
 {
     const uint8_t *frame;
+    uint32_t flen;
     uint32_t frames = 0;
     uint32_t t0 = HAL_GetTick();
 
-    /* Count RGB565 frames for 1.5 s. */
+    /* Count JPEG frames for 1.5 s. */
     while ((HAL_GetTick() - t0) < 1500U)
     {
-        if (OV5640_GetFrame(&frame)) frames++;
+        if (OV5640_GetFrame(&frame, &flen)) frames++;
     }
 
     uint32_t dt = HAL_GetTick() - t0;
     if (frames)
     {
-        printf("OV5640: selftest OK - %lu RGB565 frames (%ux%u), %lu fps\r\n",
+        printf("OV5640: selftest OK - %lu JPEG frames (%ux%u), %lu fps\r\n",
                (unsigned long)frames, (unsigned)OV5640_FRAME_W,
                (unsigned)OV5640_FRAME_H,
                (unsigned long)(frames * 1000U / (dt ? dt : 1U)));
     }
     else
     {
-        printf("OV5640: selftest FAILED - no RGB565 frames\r\n");
+        printf("OV5640: selftest FAILED - no JPEG frames\r\n");
     }
     g_last_get_tick = 0;   /* idle until a client asks for frames */
 }
@@ -622,24 +699,24 @@ int OV5640_Init(void)
      * until JPEG frames actually flow. */
     for (int attempt = 1; attempt <= 4; attempt++)
     {
-        /* Configure RGB565 QVGA output (vendor base + QVGA + fmt). */
+        /* Configure JPEG QVGA output (vendor base + QVGA + JPEG fmt). */
         ov5640_write_table(ov5640_base_rgb565,
                            sizeof(ov5640_base_rgb565) / sizeof(ov5640_base_rgb565[0]));
         ov5640_write_table(ov5640_qvga,
                            sizeof(ov5640_qvga) / sizeof(ov5640_qvga[0]));
-        ov5640_write_table(ov5640_rgb565_fmt,
-                           sizeof(ov5640_rgb565_fmt) / sizeof(ov5640_rgb565_fmt[0]));
+        ov5640_write_table(ov5640_jpeg_fmt,
+                           sizeof(ov5640_jpeg_fmt) / sizeof(ov5640_jpeg_fmt[0]));
 
         /* Bring up DCMI + DMA capture. */
         dcmi_dma_init();
-        /* Clear the buffer BEFORE capture starts so the frame-verify below
+        /* Clear the ring BEFORE capture starts so the frame-verify below
          * only counts fresh sensor data. */
         memset(snap_buf, 0, sizeof(snap_buf));
         OV5640_FrameState = 0;
         dcmi_init();
         dcmi_started = 1;
 
-        /* Wait ~1.5 s for the first complete RGB565 snapshot. */
+        /* Wait ~1.5 s for the first complete JPEG frame. */
         dcmi_frame_evts = 0;
         dcmi_vsync_evts = 0;
         g_frame_count = 0;
@@ -647,17 +724,19 @@ int OV5640_Init(void)
         g_last_get_tick = HAL_GetTick();
         {
             const uint8_t *f;
+            uint32_t flen;
             int got = 0;
             uint32_t t0 = HAL_GetTick();
             while ((HAL_GetTick() - t0) < 1500U)
             {
-                if (OV5640_GetFrame(&f)) { got = 1; break; }
+                if (OV5640_GetFrame(&f, &flen)) { got = 1; break; }
             }
             if (got)
             {
-                printf("OV5640: init ok (attempt %d, RGB565 %ux%u)\r\n",
+                printf("OV5640: init ok (attempt %d, JPEG %ux%u, "
+                       "first frame %lu B)\r\n",
                        attempt, (unsigned)OV5640_FRAME_W,
-                       (unsigned)OV5640_FRAME_H);
+                       (unsigned)OV5640_FRAME_H, (unsigned long)flen);
                 camera_ready = 1;
                 g_last_get_tick = 0;   /* idle until a client asks for frames */
                 return 0;
@@ -668,7 +747,7 @@ int OV5640_Init(void)
                "ndtr0=%lu), power-cycling...\r\n",
                attempt, (unsigned long)dcmi_vsync_evts,
                (unsigned long)hdma_dcmi.Instance->NDTR,
-               (unsigned long)SNAP_WORDS);
+               (unsigned long)RING_WORDS);
         ov5640_capture_stop();
         ov5640_power_on();
     }
