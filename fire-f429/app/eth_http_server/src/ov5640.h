@@ -58,6 +58,16 @@ uint32_t OV5640_FrameCount(void);
  * power-cycle + reconfigure it. Call periodically from the main loop. */
 void OV5640_HealthCheck(void);
 
+/* Set JPEG image rotation: 0/90/180/270 degrees. This applies the OV5640
+ * vflip (0x3820 bits 2:1) + hmirror (0x3821 bits 2:1) registers to rotate
+ * the image in the sensor (no CPU-side transpose needed for 90/270 - the
+ * sensor's native windowing flips the axes). Returns 0 on success. */
+int OV5640_SetRotation(int deg);
+
+/* Set the JPEG encoder quality: 0 (worst/smallest) .. 63 (best/largest).
+ * Writes the OV5640 compression register 0x4407. Returns 0 on success. */
+int OV5640_SetQuality(int q);
+
 /* Boot-time diagnostic: waits ~1.5 s, reports how many JPEG frames were
  * captured (prints to the debug UART). */
 void OV5640_Selftest(void);

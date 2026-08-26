@@ -277,6 +277,10 @@ window.addEventListener('resize', redrawAll);
 const camImg = document.getElementById('camera-img');
 const camPh = document.getElementById('camera-placeholder');
 const camBtn = document.getElementById('cam-stream');
+const camRot = document.getElementById('cam-rotation');
+const camQ = document.getElementById('cam-quality');
+const camQVal = document.getElementById('cam-quality-val');
+const camApply = document.getElementById('cam-apply');
 let camStreaming = false;
 let camLastFrames = -1;
 let camNoAdvance = 0;
@@ -284,6 +288,20 @@ let camNoAdvance = 0;
 function camShowImg(show) {
   camImg.style.display = show ? 'block' : 'none';
   camPh.style.display = show ? 'none' : 'block';
+}
+
+/* Apply rotation + quality on the sensor; the stream (if running) picks up
+ * new frames automatically - restart it to force a clean boundary. */
+async function camApplySettings() {
+  try {
+    const url = '/api/camera/control?rot=' + encodeURIComponent(camRot.value) +
+                '&quality=' + encodeURIComponent(camQ.value);
+    const j = await getJSON(url, null);
+    setStatus('camera-status', 'applied (rot ' + (j.rot === undefined ? camRot.value : j.rot) +
+              '°, quality ' + (j.quality === undefined ? camQ.value : j.quality) + ')', 'ok');
+  } catch (e) {
+    setStatus('camera-status', 'apply failed — camera not ready', 'err');
+  }
 }
 
 function camStart() {
@@ -362,6 +380,10 @@ document.getElementById('cam-snapshot').addEventListener('click', () => {
   camImg.src = '/capture?' + Date.now();
   setStatus('camera-status', 'snapshot…', '');
 });
+
+/* Rotation/quality controls: the Apply button pushes both to the sensor. */
+camApply.addEventListener('click', camApplySettings);
+camQ.addEventListener('input', () => { camQVal.textContent = camQ.value; });
 
 async function loadCamera() {
   setStatus('camera-status', 'querying camera…', '');

@@ -81,7 +81,7 @@
     </div>
   </section>
 
-  <!-- Tab 3: Camera (OV5640 RGB565 stream) -->
+  <!-- Tab 3: Camera (OV5640 JPEG stream) -->
   <section id="tab-camera" class="panel">
     <h2>Camera</h2>
     <p>Live JPEG stream from the on-board OV5640 (QVGA 320x240 JPEG).</p>
@@ -92,6 +92,21 @@
     <div class="row">
       <button id="cam-stream" class="btn">Start stream</button>
       <button id="cam-snapshot" class="btn">Snapshot</button>
+    </div>
+    <div class="row">
+      <label>Rotation:
+        <select id="cam-rotation">
+          <option value="0" selected>0°</option>
+          <option value="90">90°</option>
+          <option value="180">180°</option>
+          <option value="270">270°</option>
+        </select>
+      </label>
+      <label>Quality:
+        <input type="range" id="cam-quality" min="4" max="63" value="12">
+        <span id="cam-quality-val">12</span>
+      </label>
+      <button id="cam-apply" class="btn">Apply</button>
     </div>
     <p id="camera-status" class="status"></p>
   </section>

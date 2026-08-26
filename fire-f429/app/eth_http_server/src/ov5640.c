@@ -606,6 +606,57 @@ int OV5640_Ready(void)
     return camera_ready;
 }
 
+/* --- Image controls (rotation + JPEG quality) ------------------------------ */
+
+/* Set JPEG image rotation by flipping the sensor's readout (0/180 = plain
+ * vflip/hmirror; 90/270 = combined flip+mirror, matching the esp32-camera
+ * camera_stream control semantics). Register mapping comes from the
+ * esp32-camera ov5640 set_image_options():
+ *   0x3820 (TIMING_TC_REG20): bit0 = binning, bit[2:1] = vflip, bit6 = 0x40
+ *   0x3821 (TIMING_TC_REG21): bit5 = JPEG enable (kept), bit[2:1] = hmirror
+ *   0x4514: companion image-option register (normal/vflip/hmirror/both).
+ * Returns 0 on success, -1 if an SCCB write fails. */
+int OV5640_SetRotation(int deg)
+{
+    uint8_t vflip = 0, hmirror = 0;
+    switch (deg % 360)
+    {
+    case 90:  vflip = 1; hmirror = 0; break;
+    case 180: vflip = 1; hmirror = 1; break;
+    case 270: vflip = 0; hmirror = 1; break;
+    default:  vflip = 0; hmirror = 0; break;   /* 0 (or anything else) */
+    }
+
+    uint8_t reg20 = 0x40U;                    /* no-binning marker bit */
+    if (vflip)  reg20 |= 0x06U;               /* bit[2:1] vertical flip */
+    uint8_t reg21 = 0x20U;                    /* bit5 = JPEG ENABLE     */
+    if (hmirror) reg21 |= 0x06U;              /* bit[2:1] horizontal mirror */
+
+    uint8_t reg4514;
+    switch ((vflip ? 1u : 0u) | (hmirror ? 2u : 0u))
+    {
+    case 0:  reg4514 = 0x88U; break;   /* normal               */
+    case 1:  reg4514 = 0x00U; break;   /* vflip                */
+    case 2:  reg4514 = 0xbbU; break;   /* hmirror              */
+    default: reg4514 = 0x00U; break;   /* vflip + hmirror      */
+    }
+
+    if (ov5640_write_reg(0x3820, reg20) != 0) return -1;
+    if (ov5640_write_reg(0x3821, reg21) != 0) return -1;
+    if (ov5640_write_reg(0x4514, reg4514) != 0) return -1;
+    return 0;
+}
+
+/* Set the JPEG encoder quality 0..63 (writes OV5640 COMPRESSION_CTRL07 =
+ * 0x4407, same as the esp32-camera driver). Returns 0 on success. */
+int OV5640_SetQuality(int q)
+{
+    if (q < 0) q = 0;
+    if (q > 63) q = 63;
+    if (q < 4) q = 4;              /* esp32-camera forces min 4 */
+    return ov5640_write_reg(0x4407, (uint8_t)q) == 0 ? 0 : -1;
+}
+
 /* --- Boot diagnostics ------------------------------------------------------- */
 void OV5640_Selftest(void)
 {

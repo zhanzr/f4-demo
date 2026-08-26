@@ -351,6 +351,44 @@ static void api_camera(struct http_conn *c)
   http_reply_json(c, body);
 }
 
+/* GET /api/camera/control?rot=0|90|180|270&quality=0..63
+ * Applies sensor-side rotation (vflip/hmirror) and/or JPEG quality.
+ * Returns {"ok":1,"rot":N,"quality":N}. */
+static void api_camera_control(struct http_conn *c)
+{
+  const char *rx = c->rx;
+  int rot = -1, quality = -1, ok = 1;
+  const char *q;
+
+  q = strstr(rx, "rot=");
+  if (q)
+  {
+    int d = atoi(q + 4);
+    if (d == 0 || d == 90 || d == 180 || d == 270) rot = d;
+  }
+  q = strstr(rx, "quality=");
+  if (q)
+  {
+    int x = atoi(q + 8);
+    if (x >= 0 && x <= 63) quality = x;
+    else if (x > 63) quality = 63;
+  }
+
+  if (rot >= 0)
+  {
+    if (OV5640_SetRotation(rot) != 0) ok = 0;
+  }
+  if (quality >= 0)
+  {
+    if (OV5640_SetQuality(quality) != 0) ok = 0;
+  }
+
+  char body[64];
+  int n = snprintf(body, sizeof(body), "{\"ok\":%d,\"rot\":%d,\"quality\":%d}",
+                   ok, rot, quality);
+  http_reply_json(c, body);
+}
+
 /* --------------------------------------------------------------------------
  * OV5640 native JPEG stream: the driver hands out complete, variable-size
  * JPEG frames (image/jpeg) directly - no RGB565 -> BMP conversion, ~10x
@@ -628,6 +666,10 @@ static void process_request(struct http_conn *c)
   else if (strcmp(path, "/api/camera") == 0)
   {
     api_camera(c);
+  }
+  else if (strcmp(path, "/api/camera/control") == 0)
+  {
+    api_camera_control(c);
   }
   else if (strcmp(path, "/stream") == 0)
   {
