@@ -28,75 +28,52 @@ DMA_HandleTypeDef DMA_Handle_dcmi;
 ImageFormat_TypeDef ImageFormat;
 
 /* ------------------------------------------------------------------ */
-/* VGA capture buffer: one 640x480 RGB565 frame = 614400 bytes, FIXED in
- * SDRAM at 0xD0300000 (after the LTDC FBs @0xD0000000 + text @0xD0177000,
- * which ends 0xD02EE000; DMA2 CAN reach SDRAM on F429). Not in .bss (it
- * would exceed one DMA NDTR transfer) and the LTDC never reads it (the
- * app blits a copy to the display framebuffer). */
-#define SNAP_BUF_ADDR  0xD0300000U
-uint8_t *snap_buf = (uint8_t *)SNAP_BUF_ADDR;
+/* QVGA capture buffer: one 320x240 RGB565 frame = 153600 bytes in SRAM
+ * (.bss) - DMA2-accessible, and the LTDC never reads it (the app blits a
+ * copy to the display framebuffer). The frame fits ONE DMA buffer
+ * (38400 words <= 0xFFFF NDTR), so the capture uses the proven single-
+ * buffer snapshot path (no fragile multi-buffer DBM). */
+__attribute__((aligned(32))) uint8_t snap_buf[OV7670_FRAME_BYTES];
 
 volatile uint8_t OV7670_FrameState = 0;   /* set by HAL_DCMI_FrameEventCallback */
 
-/* VGA frame = 614400 B = 153600 words -> split into 4 DMA quarters of
- * 38400 words (<= 0xFFFF NDTR). Each quarter = 153600 bytes.
- *   Q0 = base + 0 B        (M0)
- *   Q1 = base + 153600 B   (M1)
- *   Q2 = base + 307200 B   (M0)
- *   Q3 = base + 460800 B   (M1)
- * The DMA alternates M0/M1 by hardware (CT toggles itself at each memory
- * transfer end); the callbacks below re-point M0AR<->Q0/Q2 and
- * M1AR<->Q1/Q3 so the four quarters are written in order Q0,Q1,Q2,Q3
- * -> one full frame. */
-#define OV7670_QWORDS      (OV7670_FRAME_BYTES / 4U / 4U)   /* 38400 words */
-#define OV7670_QBYTES      (OV7670_QWORDS * 4U)             /* 153600 B   */
-
-static volatile uint32_t ov7670_qtrs = 0;
-
-/* quarter-toggle DMA callbacks (defined below, used in OV7670_DMA_Config) */
-static void OV7670_DMA_M0Cplt(DMA_HandleTypeDef *hdma);
-static void OV7670_DMA_M1Cplt(DMA_HandleTypeDef *hdma);
-static void OV7670_DMA_Error(DMA_HandleTypeDef *hdma);
-
 /* ------------------------------------------------------------------ */
-/* OV7670 VGA (640x480) RGB565 register table.
+/* OV7670 QVGA (320x240) RGB565 register table.
  *
  * BASE: the no-FIFO recipe from iwatake2222/DigitalCamera_STM32
- * (ov7670Reg.h) + the OpenMV/esp32-camera VGA frame-control values
- * (ov7670_frame_control(158,14,10,490)):
- *   - COM7=0x04 (VGA RGB565), RGB444 off (0x8C=0x00), COM15=0xD0 full range
- *   - COM3=0x00 (no scaling), COM14=0x00 (no PCLK div), PCLK_DIV=0xF0
+ * (ov7670Reg.h) + the OpenMV/esp32-camera QVGA frame-control values
+ * (ov7670_frame_control(158,14,10,490) + QVGA scaling):
+ *   - COM7=0x14 (QVGA RGB565), RGB444 off (0x8C=0x00), COM15=0xD0 full range
+ *   - COM3=0x04 (DCW), COM14=0x19 (manual scaling, PCLK/2),
+ *     XSC/YSC/DCWCTR/PCLK_DIV = 0x3A/0x35/0x11/0xF1 (proven no-FIFO QVGA)
  *   - window HSTART/HSTOP/HREF = 158>>3, 14>>3, (14&7)<<3|(158&7)
  *     VSTART/VSTOP/VREF = 10>>2, 490>>2, ((490&2)<<2)|(10&2)
- *   - COM13=0x80 (gamma enable + UV auto) — real contrast/color,
- *   - COM16=0x38 (edge enhance, de-noise, AWB gain) — realistic look,
+ *   - COM13=0x80 (gamma enable + UV auto), COM16=0x38 (edge/de-noise/AWB)
  *   - MVFP=0x31 (mirror+flip, sensor orientation on this connector),
  *   - AGC/AEC/AWB auto blocks + gamma curve from ALIENTEK (kept).
  */
 static const uint8_t ov7670_init_reg_tbl[][2] =
 {
     /* format */
-    {0x12, 0x04},   /* COM7: VGA (640x480), RGB565 */
+    {0x12, 0x14},   /* COM7: QVGA (320x240), RGB565 */
     {0x8c, 0x00},   /* RGB444 disable */
     {0x40, 0xd0},   /* COM15: RGB565, 00-FF (full range) */
     {0x3a, 0x0c},   /* TSLB: UYVY-style output (reference) */
 
-    /* window / scaling (VGA: no scaling, no DCW, no PCLK div) */
-    {0x0c, 0x00},   /* COM3: scale off, DCW off */
-    {0x3e, 0x00},   /* COM14: no manual scaling, no PCLK div */
-    {0x70, 0x00},   /* SCALING_XSC: NO scaling (0x3A was interpolating the
-                       color bar -> 7-10px transitions/overlaps between bars;
-                       the no-scaler values give clean 80-px bars) */
-    {0x71, 0x01},   /* SCALING_YSC: no scaling */
-    {0x72, 0x00},   /* SCALING_DCWCTR: no DCW */
-    {0x73, 0xf0},   /* SCALING_PCLK_DIV: DSP clock not divided */
+    /* window / scaling (QVGA no-FIFO recipe) */
+    {0x0c, 0x04},   /* COM3: DCW enable */
+    {0x3e, 0x19},   /* COM14: manual scaling, PCLK/2 */
+    {0x70, 0x3a},   /* SCALING_XSC */
+    {0x71, 0x35},   /* SCALING_YSC */
+    {0x72, 0x11},   /* SCALING_DCWCTR: down sample by 2 */
+    {0x73, 0xf1},   /* SCALING_PCLK_DIV: DSP clock /2 */
     {0xa2, 0x02},   /* SCALING_PCLK_DELAY */
-    {0x32, 0x36},   /* HREF: (14&7)<<3 | (158&7) = 0x36 */
-    {0x17, 0x13},   /* HSTART = 158>>3 = 19 */
-    {0x18, 0x01},   /* HSTOP  =  14>>3 = 1 */
-    {0x19, 0x02},   /* VSTART =  10>>2 = 2 */
-    {0x1a, 0x7a},   /* VSTOP  = 490>>2 = 122 */
-    {0x03, 0x0a},   /* VREF: ((490&2)<<2)|(10&2) = 0x0A */
+    {0x32, 0x80},   /* HREF */
+    {0x17, 0x16},   /* HSTART */
+    {0x18, 0x04},   /* HSTOP */
+    {0x19, 0x03},   /* VSTART = 14 (3*4+2) */
+    {0x1a, 0x7b},   /* VSTOP = 494 (123*4+2) */
+    {0x03, 0x0a},   /* VREF */
     {0x15, 0x00},   /* COM10 */
     {0x11, 0x00},   /* CLKRC: pre-scalar 1/1 */
 
@@ -397,31 +374,19 @@ void OV7670_Init(void)
     /* DCMI 配置
      * Empirically determined by app/ov7670_dcmi_probe (color-bar + polarity
      * sweep):
-     *   VSYNC = HIGH, HREF = LOW, PCLK = FALLING.
-     * The OV5640's PCKPOL=RISING worked at QVGA's slow rate, but at VGA's
-     * 2x pixel rate the sensor's data setup/hold is marginal on the rising
-     * edge -> adjacent bytes get sampled in the wrong order (the captured
-     * row dump shows byte-order flips row-to-row: a1c8->c8a1, 810f->0f81 -
-     * that IS the diagonal pattern). The probe measured ~60% more valid
-     * color-bar words with PCKPOL=FALLING, so VGA samples on the falling
-     * edge. */
+     *   VSYNC = HIGH, HREF = LOW, PCLK = RISING (QVGA).
+     * The probe measured ~60% more valid color-bar words with PCKPOL=RISING
+     * at QVGA's slow pixel rate (the OV5640-clone setting). FALLING was
+     * only needed at VGA's 2x pixel rate where the sensor's data setup/hold
+     * is marginal on the rising edge. */
     DCMI_Handle.Instance              = DCMI;
     DCMI_Handle.Init.SynchroMode      = DCMI_SYNCHRO_HARDWARE;
-    DCMI_Handle.Init.PCKPolarity      = DCMI_PCKPOLARITY_FALLING;  /* VGA-probe */
+    DCMI_Handle.Init.PCKPolarity      = DCMI_PCKPOLARITY_RISING;  /* QVGA-probe */
     DCMI_Handle.Init.VSPolarity       = DCMI_VSPOLARITY_HIGH;
     DCMI_Handle.Init.HSPolarity       = DCMI_HSPOLARITY_LOW;   /* probe-proven */
     DCMI_Handle.Init.CaptureRate      = DCMI_CR_ALL_FRAME;
     DCMI_Handle.Init.ExtendedDataMode = DCMI_EXTEND_DATA_8B;
     HAL_DCMI_Init(&DCMI_Handle);
-
-    /* HAL_DCMI_Init enables LINE|VSYNC|ERR|OVR interrupts by default. At
-     * VGA rates LINE fires ~480x/frame; if left on (and un-cleared) the
-     * DCMI IRQ re-enters forever (ISR storm - the wedge we debugged).
-     * We only need FRAME (enabled in ov7670_capture_start), so kill the
-     * others here. ERR/OVR are also masked - they can false-trigger during
-     * snapshot re-arms; the DMA handles pacing. */
-    __HAL_DCMI_DISABLE_IT(&DCMI_Handle,
-                          DCMI_IT_LINE | DCMI_IT_VSYNC | DCMI_IT_ERR | DCMI_IT_OVR);
 
     /* 配置中断 */
     HAL_NVIC_SetPriority(DCMI_IRQn, 5, 0);
@@ -432,77 +397,30 @@ void OV7670_Init(void)
 }
 
 /**
-  * @brief  配置 DCMI/DMA 以捕获 VGA 帧 (continuous, 4-quarter DBM ring).
+  * @brief  配置 DCMI/DMA 以捕获 QVGA 帧 (single-buffer snapshot).
   *
-  * VGA frame (153600 words) is too large for one DMA buffer (NDTR is 16-bit,
-  * max 65535), so the capture uses the 4-quarter double-buffer (DBM) scheme:
-  *   Q0 = base + 0        (M0)   Q1 = base + 153600 B  (M1)
-  *   Q2 = base + 307200 B (M0)   Q3 = base + 460800 B  (M1)
-  * Each quarter = 38400 words (<= 0xFFFF). After HAL_DCMI_Start_DMA
-  * (continuous) installs its (broken) callbacks, we override them with a
-  * deterministic quarter-toggle so M0 writes Q0,Q2 and M1 writes Q1,Q3.
-  * Every 4 quarters (2 DBM alternations, ~one frame of data) we re-enable
-  * the DCMI FRAME interrupt, so HAL_DCMI_FrameEventCallback fires once per
-  * frame worth of pixels. Continuous mode means the capture never stops -
-  * the main loop just blits the newest frame out (private buffer, no
-  * tearing) and never needs to re-arm.
+  * QVGA 320x240 RGB565 = 153600 B = 38400 words <= 0xFFFF NDTR, so the
+  * capture uses ONE DMA buffer (the proven OV5640-clone snapshot path):
+  *   - DCMI SNAPSHOT mode + DMA NORMAL: captures ONE complete frame per
+  *     transfer, then the DMA stops.
+  *   - The main loop blits the frozen buffer and re-arms the next snapshot
+  *     (OV7670_DMA_Config). Deterministic - every blit reads a complete
+  *     frame (no rolling ring, no tearing, no phase issues).
   */
-/* Start VGA capture (continuous + circular double-buffer, 4 quarters):
- * HAL_DCMI_Start_DMA with Length > 0xFFFF makes the HAL split the frame
- * into 4 DMA quarters (XferSize=38400 words, M0AR=Q0, M1AR=Q1) and installs
- * its DCMI_DMAXferCplt - we then override the DMA callbacks with our
- * quarter-toggle so Q0,Q1,Q2,Q3 cycle continuously (M0AR Q0<->Q2,
- * M1AR Q1<->Q3). The DCMI FRAME flag fires every sensor frame; the FRAME IT
- * is re-enabled per frame in HAL_DCMI_FrameEventCallback.
- *
- * NOTE: this must be DMA_CIRCULAR (see OV7670_DMA_Config) - DMA_NORMAL in
- * double-buffer mode stops after the first M0+M1 pair (Q0,Q1 only), which
- * never completes a full frame. */
-static void ov7670_capture_start(void)
-{
-    uint32_t base = (uint32_t)SNAP_BUF_ADDR;
-
-    /* CROP the DCMI to exactly 640x480. The OV7670's HREF spans the full
-     * sensor window (~784 px/row), so WITHOUT crop the DCMI captures more
-     * than 640 px/row -> 480 rows don't fit the 614400-B buffer -> a bar
-     * can be missing from the frozen frame (the "B=0" histogram). Crop
-     * makes the buffer hold exactly one complete frame. */
-    HAL_DCMI_ConfigCrop(&DCMI_Handle, 0, 0, img_width, img_height);
-    HAL_DCMI_EnableCrop(&DCMI_Handle);
-
-    HAL_DCMI_Start_DMA(&DCMI_Handle, DCMI_MODE_CONTINUOUS,
-                       base, OV7670_FRAME_BYTES / 4U);   /* 153600 words */
-
-    /* Override the HAL's DCMI_DMAXferCplt with our quarter-toggle. */
-    DMA_Handle_dcmi.XferCpltCallback   = OV7670_DMA_M0Cplt;
-    DMA_Handle_dcmi.XferM1CpltCallback = OV7670_DMA_M1Cplt;
-    DMA_Handle_dcmi.XferErrorCallback  = OV7670_DMA_Error;
-    DMA_Handle_dcmi.XferHalfCpltCallback   = NULL;
-    DMA_Handle_dcmi.XferM1HalfCpltCallback = NULL;
-
-    /* Enable DCMI FRAME IT (continuous mode needs us to re-enable it). */
-    __HAL_DCMI_ENABLE_IT(&DCMI_Handle, DCMI_IT_FRAME);
-}
-
-
 /**
-  * @brief  配置 DCMI/DMA 以捕获 VGA 帧 (continuous + circular 4-quarter DBM).
-  *         Starts the continuous capture once; the ring runs forever, so
-  *         later calls are no-ops (guarded by the DMA EN bit).
-  * @param  DMA_Memory0BaseAddr: base of the frame buffer (SNAP_BUF_ADDR)
-  * @param  DMA_BufferSize: total frame in words (153600; unused)
+  * @brief  配置 DCMI/DMA 以捕获 QVGA 帧 (single-buffer snapshot).
+  *         Re-arms the capture; call once at init and after each frame.
+  * @param  DMA_Memory0BaseAddr: base of the frame buffer (snap_buf)
+  * @param  DMA_BufferSize: total frame in words (38400)
+  *
+  * The proven commit-4890139 flow: DMA_NORMAL + DCMI_MODE_SNAPSHOT, one
+  * frame per transfer. The HAL's DCMI_DMAXferCplt re-enables the FRAME IT
+  * only AFTER the DMA completes, so the frame event can never fire before
+  * the buffer is full - no abort/EN-guard/flag-clearing needed on re-arm.
   */
 void OV7670_DMA_Config(uint32_t DMA_Memory0BaseAddr, uint32_t DMA_BufferSize)
 {
-    uint32_t base = DMA_Memory0BaseAddr;
-    (void)DMA_BufferSize;
-
-    /* If a capture is already running, don't re-arm mid-frame. */
-    if ((DMA2_Stream1->CR & DMA_SxCR_EN) != 0U)
-    {
-        return;
-    }
-
+    /* 配置DMA从DCMI中获取数据 */
     __HAL_RCC_DMA2_CLK_ENABLE();
     DMA_Handle_dcmi.Instance = DMA2_Stream1;
     DMA_Handle_dcmi.Init.Channel = DMA_CHANNEL_1;
@@ -511,7 +429,7 @@ void OV7670_DMA_Config(uint32_t DMA_Memory0BaseAddr, uint32_t DMA_BufferSize)
     DMA_Handle_dcmi.Init.MemInc = DMA_MINC_ENABLE;
     DMA_Handle_dcmi.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
     DMA_Handle_dcmi.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
-    DMA_Handle_dcmi.Init.Mode = DMA_CIRCULAR;  /* DBM needs circular to loop */
+    DMA_Handle_dcmi.Init.Mode = DMA_NORMAL;   /* snapshot: stop after frame */
     DMA_Handle_dcmi.Init.Priority = DMA_PRIORITY_HIGH;
     DMA_Handle_dcmi.Init.FIFOMode = DMA_FIFOMODE_ENABLE;
     DMA_Handle_dcmi.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
@@ -523,67 +441,15 @@ void OV7670_DMA_Config(uint32_t DMA_Memory0BaseAddr, uint32_t DMA_BufferSize)
     HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
     HAL_DMA_Init(&DMA_Handle_dcmi);
 
-    /* Clear stale flags and make sure DCMI is off before re-arming. */
-    if (DCMI->RISR & DCMI_FLAG_OVRRI)   __HAL_DCMI_CLEAR_FLAG(&DCMI_Handle, DCMI_FLAG_OVRRI);
-    if (DCMI->RISR & DCMI_FLAG_ERRRI)   __HAL_DCMI_CLEAR_FLAG(&DCMI_Handle, DCMI_FLAG_ERRRI);
-    if (DCMI->RISR & DCMI_FLAG_FRAMERI) __HAL_DCMI_CLEAR_FLAG(&DCMI_Handle, DCMI_FLAG_FRAMERI);
-    __HAL_DCMI_DISABLE(&DCMI_Handle);
-
-    /* Snapshot + 4-quarter DBM, then override the callbacks. */
-    ov7670_capture_start();
-
-    (void)base;
-}
-
-/* Called on M0 transfer complete (CT!=0: M0 just filled). Advance M0AR to
- * the next M0 quarter so the circular DBM keeps filling Q0,Q2,Q0,... */
-static void OV7670_DMA_M0Cplt(DMA_HandleTypeDef *hdma)
-{
-    (void)hdma;
-    if ((DMA2_Stream1->CR & DMA_SxCR_CT) != 0U)
-    {
-        uint32_t m0 = DMA2_Stream1->M0AR;
-        if (m0 == (uint32_t)SNAP_BUF_ADDR)
-        {
-            DMA2_Stream1->M0AR = SNAP_BUF_ADDR + 2U * OV7670_QBYTES;  /* Q0->Q2 */
-        }
-        else
-        {
-            DMA2_Stream1->M0AR = SNAP_BUF_ADDR;                       /* Q2->Q0 */
-        }
-    }
-}
-
-/* Called on M1 transfer complete (CT==0: M1 just filled). Advance M1AR to
- * the next M1 quarter so the circular DBM keeps filling Q1,Q3,Q1,... */
-static void OV7670_DMA_M1Cplt(DMA_HandleTypeDef *hdma)
-{
-    (void)hdma;
-    if ((DMA2_Stream1->CR & DMA_SxCR_CT) == 0U)
-    {
-        uint32_t m1 = DMA2_Stream1->M1AR;
-        if (m1 == (SNAP_BUF_ADDR + OV7670_QBYTES))
-        {
-            DMA2_Stream1->M1AR = SNAP_BUF_ADDR + 3U * OV7670_QBYTES;  /* Q1->Q3 */
-        }
-        else
-        {
-            DMA2_Stream1->M1AR = SNAP_BUF_ADDR + OV7670_QBYTES;       /* Q3->Q1 */
-        }
-    }
-}
-
-static void OV7670_DMA_Error(DMA_HandleTypeDef *hdma)
-{
-    (void)hdma;
+    /* 使能DCMI采集数据（快照模式，一帧完成后自动停止） */
+    HAL_DCMI_Start_DMA(&DCMI_Handle, DCMI_MODE_SNAPSHOT,
+                       (uint32_t)DMA_Memory0BaseAddr, DMA_BufferSize);
 }
 
 /**
-  * @brief  Freeze a complete, VSYNC-aligned frame: stop the DCMI + abort the
-  *         DMA so the blit reads a stable buffer, then re-arm on FRAME
-  *         events (see OV7670_DMA_Config). This is what makes the pattern
-  *         vertical bars clean - a rolling ring torn by live DMA writes is
-  *         exactly what showed diagonals (only W/Bk bar words decoded).
+  * @brief  Freeze the capture: stop the DCMI + disable the FRAME IT so the
+  *         buffer is stable (used by the boot pattern phase). The live path
+  *         does NOT need this - snapshot mode already stops after one frame.
   */
 void OV7670_CaptureStop(void)
 {
@@ -612,31 +478,26 @@ void HAL_DCMI_VsyncEventCallback(DCMI_HandleTypeDef *hdcmi)
 }
 
 /**
-  * @brief  Frame event callback - a complete frame is in snap_buf (VGA,
-  *         4 quarters). The main loop blits it to the display. Re-enable
-  *         the FRAME IT for the next sensor frame (continuous mode - the
-  *         HAL disables it after each FRAME event).
+  * @brief  Frame event callback - a complete snapshot frame is in snap_buf.
+  *         The main loop blits it to the display and re-arms the capture.
+  *         (The HAL's DCMI_DMAXferCplt re-enables the FRAME IT after the
+  *         DMA completes - do NOT re-enable it here.)
   */
 void HAL_DCMI_FrameEventCallback(DCMI_HandleTypeDef *hdcmi)
 {
-    __HAL_DCMI_ENABLE_IT(hdcmi, DCMI_IT_FRAME);   /* arm next frame */
     OV7670_FrameState = 1;
+    (void)hdcmi;
 }
 
 /* --- IRQ handlers ----------------------------------------------------------
  * The repo's startup_stm32f429xx.s maps DCMI_IRQHandler and
  * DMA2_Stream1_IRQHandler to Default_Handler (an infinite loop) unless the
- * app defines them - define both here.
+ * app defines them - define both here (same as the proven OV5640 clone).
  *
- * IMPORTANT: HAL_DCMI_IRQHandler is deliberately NOT called. At VGA rates
- * the DCMI sync/overrun flags assert frequently; the newer HAL's error
- * branch aborts the DMA (HAL_DMA_Abort_IT) which re-triggers the DCMI IRQ
- * -> infinite ISR storm (verified with the debugger: PC stuck in
- * HAL_DCMI_IRQHandler -> DCMI_DMAError). Instead we handle the FRAME flag
- * ourselves (the only thing the app uses) and just clear ERR/OVR. */
+ * The vendored HAL_DCMI_IRQHandler aborts the DMA on a sync/overflow error,
+ * so the error flags are cleared here before the HAL sees them. */
 void DCMI_IRQHandler(void)
 {
-    /* clear error/overrun flags (never let the HAL abort the DMA) */
     if (DCMI->RISR & DCMI_FLAG_ERRRI)
     {
         __HAL_DCMI_CLEAR_FLAG(&DCMI_Handle, DCMI_FLAG_ERRRI);
@@ -645,13 +506,7 @@ void DCMI_IRQHandler(void)
     {
         __HAL_DCMI_CLEAR_FLAG(&DCMI_Handle, DCMI_FLAG_OVRRI);
     }
-
-    /* FRAME: one full sensor frame is in the buffer -> notify the app. */
-    if (DCMI->RISR & DCMI_FLAG_FRAMERI)
-    {
-        __HAL_DCMI_CLEAR_FLAG(&DCMI_Handle, DCMI_FLAG_FRAMERI);
-        HAL_DCMI_FrameEventCallback(&DCMI_Handle);   /* sets OV7670_FrameState */
-    }
+    HAL_DCMI_IRQHandler(&DCMI_Handle);
 }
 
 void DMA2_Stream1_IRQHandler(void)

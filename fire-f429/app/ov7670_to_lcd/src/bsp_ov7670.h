@@ -16,22 +16,21 @@
 
 extern DCMI_HandleTypeDef DCMI_Handle;
 
-/* 摄像头采集图像的大小 - VGA 640x480 RGB565 (sensor max resolution).
- * The frame = 614400 bytes = 153600 words > 16-bit DMA NDTR (65535), so the
- * HAL switches to its multi-buffer (4 x 38400-word / 153600-byte quarter)
- * DMA path; the app overrides the Xfer callbacks with a deterministic
- * quarter-toggle (see bsp_ov7670.c). */
-#define img_width  640
-#define img_height 480
-#define OV7670_FRAME_BYTES  (img_width * img_height * 2)  /* 614400 */
+/* 摄像头采集图像的大小 - QVGA 320x240 RGB565 (proven stable; VGA 640x480
+ * was abandoned - fragile multi-quarter DBM + marginal PCLK timing).
+ * The frame = 153600 bytes = 38400 words <= 16-bit DMA NDTR (65535), so
+ * the capture uses a SINGLE DMA buffer (the proven OV5640-clone snapshot
+ * path - no fragile multi-buffer DBM). */
+#define img_width  320
+#define img_height 240
+#define OV7670_FRAME_BYTES  (img_width * img_height * 2)  /* 153600 */
 
-/* Snap buffer: one VGA RGB565 frame, fixed in SDRAM (DMA2 CAN reach it on
- * F429) at 0xD0300000 - after the LTDC framebuffers (0xD0000000) and the
- * text overlay (0xD0177000, ends 0xD02EE000). The LTDC never reads it. */
-extern uint8_t *snap_buf;
+/* Snap buffer: one QVGA RGB565 frame in SRAM (.bss) - DMA2-accessible,
+ * and the LTDC never reads it (the app blits a copy to the display FB). */
+extern uint8_t snap_buf[OV7670_FRAME_BYTES];
 
 /* Set to 1 by HAL_DCMI_FrameEventCallback when a full snapshot is in the
- * buffer (all 4 DMA quarters written). The consumer re-arms after blit. */
+ * buffer. The consumer re-arms after blit. */
 extern volatile uint8_t OV7670_FrameState;
 
 /* Image Sizes enumeration */

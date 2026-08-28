@@ -44,12 +44,82 @@ uint8_t fps = 0;
 #define TEXT_LINE_H    24U            /* Font24-ish line pitch */
 
 /* ------------------------------------------------------------------ */
-/* 1:1 (NOT stretched) display of one VGA 640x480 RGB565 frame: copy into
- * the framebuffer. VGA fills the full 480 height; the window is at the
- * LEFTMOST edge (X=0) for bring-up debugging (no centering). */
+/* Blit one QVGA 320x240 RGB565 snapshot into an 800x480 RGB565 display
+ * framebuffer, nearest-neighbour 2.5x H / 2x V (sx = x*2/5, sy = y/2) -
+ * the proven OV5640-clone stretch. Two output pixels are written per
+ * 32-bit store (SDRAM stores are the bottleneck; the LTDC reads SDRAM
+ * directly - F4 has no cache, so the buffer is deliberately NOT volatile,
+ * letting gcc combine the stores). */
 
-#define CAM_WIN_X  0U                                            /* debug: left edge */
-#define CAM_WIN_Y  0U                                            /* 480 high */
+static void blit_snap(uint32_t fb)
+{
+    uint32_t *dst = (uint32_t *)fb;
+    const uint8_t *src = snap_buf;
+
+    for (uint16_t y = 0; y < 480; y++)
+    {
+        const uint8_t *srow = src + (uint32_t)(y >> 1) * 640U;  /* 320*2 */
+        uint32_t *drow = dst + (uint32_t)y * 400U;              /* 800/2 */
+        for (uint16_t x = 0; x < 800; x += 2)
+        {
+            uint32_t sx0 = ((uint32_t)x * 2U) / 5U;
+            uint32_t sx1 = ((uint32_t)(x + 1) * 2U) / 5U;
+            uint16_t p0 = (uint16_t)(srow[sx0 * 2U] | ((uint16_t)srow[sx0 * 2U + 1U] << 8));
+            uint16_t p1 = (uint16_t)(srow[sx1 * 2U] | ((uint16_t)srow[sx1 * 2U + 1U] << 8));
+            drow[x >> 1] = (uint32_t)p0 | ((uint32_t)p1 << 16);
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Consume one completed snapshot frame: blit into the hidden buffer,
+ * swap at the vertical blanking, then re-arm the next snapshot. Returns
+ * the new hidden buffer (the other FB), for ping-pong.
+ *
+ * Snapshot mode (DMA_NORMAL + DCMI_MODE_SNAPSHOT) captures ONE complete
+ * frame per transfer and stops - the buffer is already stable when the
+ * FRAME event fires, so no freeze is needed before the blit.
+ *
+ * In pattern mode (pattern_mode=1) the frame is rendered NORMALIZED
+ * (8 solid equal-width bars) instead of the raw blit. */
+
+static uint8_t pattern_mode = 0;
+
+static uint32_t render_pattern(uint32_t fb);   /* defined below */
+
+static uint32_t present_frame(uint32_t back)
+{
+    if (pattern_mode && render_pattern(back))
+    {
+        LcdCamera_SetLayer0FB(back);
+        OV7670_DCMI_Resume();               /* re-enable capture */
+        OV7670_DMA_Config((uint32_t)snap_buf, img_width * img_height / 2);
+        return (back == FB0) ? FB1 : FB0;
+    }
+    blit_snap(back);
+    LcdCamera_SetLayer0FB(back);
+    OV7670_DCMI_Resume();               /* re-enable capture */
+    OV7670_DMA_Config((uint32_t)snap_buf, img_width * img_height / 2);
+    return (back == FB0) ? FB1 : FB0;
+}
+
+/* ------------------------------------------------------------------ */
+/* OV7670 built-in 8-color test pattern (regs 0x70/0x71). on=1 enables
+ * it, on=0 returns to live image.
+ *
+ * IMPORTANT: only bit7 of SCALING_YSC is the color-bar enable - the lower
+ * 7 bits are the VGA/QVGA scaling factors (QVGA: XSC=0x3A, YSC=0x35) and
+ * must be PRESERVED. Blindly writing the QVGA values (0x00/0x01) here
+ * corrupts the geometry -> diagonal lines (the bug this replaces). */
+static void sensor_test_bar(uint8_t on)
+{
+    uint8_t xsc = OV7670_ReadReg(OV7670_REG_SCALING_XSC);
+    uint8_t ysc = OV7670_ReadReg(OV7670_REG_SCALING_YSC);
+
+    OV7670_WriteReg(OV7670_REG_SCALING_XSC, (uint8_t)(xsc & 0x7FU));
+    OV7670_WriteReg(OV7670_REG_SCALING_YSC,
+                    (uint8_t)((ysc & 0x7FU) | (on ? 0x80U : 0x00U)));
+}
 
 /* ------------------------------------------------------------------ */
 /* Normalized pattern renderer (debug).
@@ -60,8 +130,8 @@ uint8_t fps = 0;
  * the same bar twice or a transition), we CLASSIFY each pixel into one of
  * the 8 canonical color classes (W/Y/C/G/M/R/B/K) and take the 8 distinct
  * classes in order of first appearance. This is immune to phase, period
- * error, and the red-bar flicker. Then draw 8 solid bars of exactly 80 px
- * each across all 480 rows.
+ * error, and the red-bar flicker. Then draw 8 solid bars of exactly equal
+ * width across the full 800 px (100 px each) - no overlap, no split bar.
  *
  * Returns 1 if the pattern was found and drawn, 0 if it fell back to the
  * raw blit. */
@@ -82,22 +152,20 @@ static int pattern_class(uint16_t w)
 
     if (mx < 8)  return 7;                    /* K: all low */
     if (mn > 20) return 0;                    /* W: all high */
-    if (r > 20 && g > 20 && b < 10) return 1; /* Y */
+    if (r > 20 && g > 20 && b < 16) return 1; /* Y (QVGA: b~11) */
     if (r < 10 && g > 20 && b > 20) return 2; /* C */
     if (r < 12 && g > 24 && b < 12) return 3; /* G */
     if (r > 20 && g < 14 && b > 20) return 4; /* M */
     if (r > 20 && g < 14 && b < 12) return 5; /* R */
-    if (r < 12 && g < 14 && b > 20) return 6; /* B */
+    if (r < 12 && g < 14 && b > 16) return 6; /* B (QVGA: b~19) */
     return -1;
 }
 
+/* Render the normalized 8-bar pattern full-screen (800x480, 100 px/bar).
+ * The sensor's QVGA frame is 320x240; we scan ALL rows so each bar appears
+ * in full somewhere regardless of the frame's arbitrary phase. */
 static uint32_t render_pattern(uint32_t fb)
 {
-    /* Scan ALL 480 rows and union the classes found. The ring buffer is
-     * exactly one frame, so it always contains a complete 8-bar pattern -
-     * but the frame boundary sits at an arbitrary phase, so a bar can be
-     * split across the buffer wrap. Scanning every row guarantees each bar
-     * appears in full somewhere. */
     uint16_t rep[8];
     uint8_t  have[8] = {0,0,0,0,0,0,0,0};
     uint32_t order[8];
@@ -105,8 +173,8 @@ static uint32_t render_pattern(uint32_t fb)
 
     for (uint32_t r = 0; r < img_height; r++)
     {
-        const uint8_t *row = snap_buf + (size_t)r * 1280u;
-        for (uint32_t x = 0; x < 640; x++)
+        const uint8_t *row = snap_buf + (size_t)r * 640u;   /* 320*2 */
+        for (uint32_t x = 0; x < img_width; x++)
         {
             uint16_t w = (uint16_t)(row[x*2u] | ((uint16_t)row[x*2u+1u] << 8));
             int c = pattern_class(w);
@@ -137,8 +205,8 @@ static uint32_t render_pattern(uint32_t fb)
         uint32_t unk = 0;
         for (uint32_t r = 0; r < img_height; r++)
         {
-            const uint8_t *row = snap_buf + (size_t)r * 1280u;
-            for (uint32_t x = 0; x < 640; x++)
+            const uint8_t *row = snap_buf + (size_t)r * 640u;
+            for (uint32_t x = 0; x < img_width; x++)
             {
                 uint16_t w = (uint16_t)(row[x*2u] | ((uint16_t)row[x*2u+1u] << 8));
                 int c = pattern_class(w);
@@ -179,160 +247,19 @@ static uint32_t render_pattern(uint32_t fb)
         printf("%04x ", (unsigned)rep[order[k]]);
     printf("\r\n");
 
-    uint16_t *dst = (uint16_t *)(uintptr_t)fb;
+    /* Full-screen 800x480: 8 bars x 100 px, 2 px per 32-bit store. */
+    uint32_t *dst = (uint32_t *)fb;
     for (uint32_t y = 0; y < 480; y++)
     {
-        uint16_t *rowp = &dst[y * LCD_WIDTH];        /* CAM_WIN_X = 0 */
-        for (uint32_t x = 0; x < 640; x++)
-            rowp[x] = rep[order[x / 80u]];
-    }
-    return 1;
-}
-
-static void blit_snap(uint32_t fb)
-{
-    uint32_t *dst = (uint32_t *)fb;
-    const uint8_t *src = snap_buf;
-
-    uint32_t win_row = (uint32_t)CAM_WIN_Y * (LCD_WIDTH / 2U) + (CAM_WIN_X / 2U);
-
-    for (uint16_t y = 0; y < img_height; y++)   /* 480 rows */
-    {
-        const uint8_t *srow = src + (uint32_t)y * ((uint16_t)img_width * 2U);
-        uint32_t *drow = dst + win_row + (uint32_t)y * (LCD_WIDTH / 2U);
-        for (uint16_t x = 0; x < img_width; x += 2)
+        uint32_t *drow = dst + (uint32_t)y * 400U;   /* 800/2 */
+        for (uint32_t x = 0; x < 800; x += 2)
         {
-            uint16_t p0 = (uint16_t)(srow[x * 2U] | ((uint16_t)srow[x * 2U + 1U] << 8));
-            uint16_t p1 = (uint16_t)(srow[x * 2U + 2U] | ((uint16_t)srow[x * 2U + 3U] << 8));
+            uint16_t p0 = rep[order[x / 100u]];
+            uint16_t p1 = rep[order[(x + 1) / 100u]];
             drow[x >> 1] = (uint32_t)p0 | ((uint32_t)p1 << 16);
         }
     }
-}
-
-/* ------------------------------------------------------------------ */
-/* Consume one completed frame: blit into the hidden buffer, swap at the
- * vertical blanking, re-arm the next snapshot. Returns the new hidden
- * buffer (the other FB), for ping-pong. */
-
-static uint32_t present_frame(uint32_t back)
-{
-    blit_snap(back);
-    LcdCamera_SetLayer0FB(back);
-    OV7670_DMA_Config((uint32_t)snap_buf, img_width * img_height / 2);
-    return (back == FB0) ? FB1 : FB0;
-}
-
-/* ------------------------------------------------------------------ */
-/* OV7670 built-in 8-color test pattern (regs 0x70/0x71). on=1 enables
- * it, on=0 returns to live image.
- *
- * IMPORTANT: only bit7 of SCALING_YSC is the color-bar enable - the lower
- * 7 bits are the VGA/QVGA scaling factors (VGA: XSC=0x3A, YSC=0x35) and
- * must be PRESERVED. Blindly writing the QVGA values (0x00/0x01) here
- * corrupts the VGA geometry -> diagonal lines (the bug this replaces). */
-static void sensor_test_bar(uint8_t on)
-{
-    uint8_t xsc = OV7670_ReadReg(OV7670_REG_SCALING_XSC);
-    uint8_t ysc = OV7670_ReadReg(OV7670_REG_SCALING_YSC);
-
-    OV7670_WriteReg(OV7670_REG_SCALING_XSC, (uint8_t)(xsc & 0x7FU));
-    OV7670_WriteReg(OV7670_REG_SCALING_YSC,
-                    (uint8_t)((ysc & 0x7FU) | (on ? 0x80U : 0x00U)));
-}
-
-/* ------------------------------------------------------------------ */
-/* Bring-up diagnostics (called from the pattern phase): stop the DMA,
- * measure the REAL row pitch of the captured VGA stream and dump the row
- * structure, then re-arm. Prints are on the console - read them after
- * flashing. */
-void ov7670_dump_capture(void)
-{
-    OV7670_CaptureStop();
-
-    /* 1) autocorrelation for the row pitch (bytes) */
-    uint32_t best_p = 0, best_n = 0;
-    for (uint32_t p = 1240; p <= 1330; p++)
-    {
-        uint32_t m = 0, t = 0;
-        for (uint32_t i = 0; i + p < img_width * 4U; i++)
-        {
-            uint8_t a = snap_buf[i];
-            if (a == 0 || a == 0xFF) { if (a == 0xFF) { } }
-            t++;
-            if (snap_buf[i] == snap_buf[i + p]) m++;
-        }
-        if (t && m > best_n) { best_n = m; best_p = p; }
-    }
-    {
-        /* also probe the 1568 (784 px) hypothesis */
-        uint32_t m = 0, t = 0;
-        for (uint32_t i = 0; i + 1568 < img_width * 4U; i++)
-        {
-            t++;
-            if (snap_buf[i] == snap_buf[i + 1568]) m++;
-        }
-        if (m > best_n) { best_n = m; best_p = 1568; }
-    }
-    printf("CAPTURE pitch: best=%lu B/row (%lu px) match=%lu\r\n",
-           (unsigned long)best_p, (unsigned long)(best_p / 2),
-           (unsigned long)best_n);
-
-    /* 2) row-structure dump at 1280 B/row: expect the same bar color per
-     * column across all rows (vertical bars) if 1280 is right. */
-    printf("row dump @1280 B/row (cols c0,c160,c320,c480,c640):\r\n");
-    for (uint32_t r = 0; r < 12; r++)
-    {
-        const uint8_t *row = snap_buf + (size_t)r * 1280u;
-        printf("  r%lu:", (unsigned long)r);
-        static const uint32_t cols[5] = { 0, 160, 320, 480, 640 };
-        for (uint32_t k = 0; k < 5; k++)
-        {
-            const uint8_t *px = row + cols[k] * 2u;
-            uint16_t w = (uint16_t)(px[0] | (px[1] << 8));
-            printf(" %04x", (unsigned)w);
-        }
-        printf("\r\n");
-    }
-    /* first 32 bytes */
-    printf("  bytes[0..31]: ");
-    for (uint32_t i = 0; i < 32; i++) printf("%02x ", (unsigned)snap_buf[i]);
-    printf("\r\n");
-
-    /* 3) run-length scan of row 0: print each run of ~constant words as a
-     * bar segment (start x, end x, width, word). This reveals the TRUE
-     * bar period and where it wraps (the trailing-white bar). */
-    printf("row0 bar segments (run-length of identical word):\r\n");
-    {
-        uint32_t seg_x = 0;
-        uint16_t seg_w = 0xFFFF;
-        for (uint32_t x = 0; x <= img_width; x++)
-        {
-            uint16_t w;
-            if (x < img_width)
-            {
-                const uint8_t *px = snap_buf + (size_t)x * 2u;
-                w = (uint16_t)(px[0] | ((uint16_t)px[1] << 8));
-            }
-            else
-            {
-                w = 0xFFFF;       /* force a flush at row end */
-            }
-            if (w != seg_w)
-            {
-                if (x > seg_x)
-                {
-                    printf("  [%4lu..%4lu] w=%04x  (r%d g%d b%d)\r\n",
-                           (unsigned long)seg_x, (unsigned long)(x - 1),
-                           (unsigned)seg_w,
-                           (unsigned)((seg_w >> 11) & 31u),
-                           (unsigned)((seg_w >> 5) & 63u),
-                           (unsigned)(seg_w & 31u));
-                }
-                seg_x = x;
-                seg_w = w;
-            }
-        }
-    }
+    return 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -433,7 +360,7 @@ int main(void)
 
     /* Transparent text overlay with the mode line. */
     LcdCamera_TextClear(0, 0, LCD_WIDTH, LCD_HEIGHT);
-    LcdCamera_AsciiString(0, 2, "Mode:VGA 640x480 1:1", COL_WHITE, COL_TRANSPARENT, 3);
+    LcdCamera_AsciiString(0, 2, "Mode:QVGA 320x240 full", COL_WHITE, COL_TRANSPARENT, 3);
     printf("LCD ready\r\n");
 
     if (!detected)
@@ -459,51 +386,33 @@ int main(void)
      * combination is what broke the sensor earlier). */
     OV7670_DCMI_GpioInit();
 
-    /* DCMI VGA capture: starts the continuous 4-quarter ring into snap_buf. */
+    /* DCMI QVGA capture: single-buffer snapshot into snap_buf. */
     OV7670_Init();
 
     /* ------------------------------------------------------------------
-     * Boot demo: sensor built-in 8-color test pattern - freeze ONE frame
-     * at a VSYNC-aligned moment. The continuous ring's DMA write phase is
-     * arbitrary, so stopping it mid-frame gave a rotated/partially-wrapped
-     * bar set (phase changes every boot -> the "fast-changing offset").
-     * Here we wait for the DCMI FRAME event (= a complete sensor frame just
-     * wrote Q0..Q3), then stop: the buffer then holds a complete frame with
-     * row 0 = sensor row 0, so the bars are always in the same place. */
-    printf("test pattern ON (VSYNC-aligned freeze)\r\n");
+     * Boot demo: sensor built-in 8-color test pattern for 3 s (real
+     * frames through the normal capture path), then live capture.
+     * The pattern is rendered NORMALIZED (8 solid equal-width bars) so
+     * the sensor's ~77.75px/bar period and arbitrary frame phase don't
+     * cause overlap or a split white bar. */
+    printf("test pattern ON (3 s)...\r\n");
     sensor_test_bar(1);
+    pattern_mode = 1;
     {
-        uint32_t t0 = HAL_GetTick();
-        while (!OV7670_FrameState)      /* wait for a complete frame */
+        uint32_t back = FB1;
+        uint32_t pat_end = HAL_GetTick() + 3000U;
+        while ((int32_t)(pat_end - HAL_GetTick()) > 0)
         {
-            if ((HAL_GetTick() - t0) > 2000U) break;   /* timeout guard */
+            if (OV7670_FrameState)
+            {
+                OV7670_FrameState = 0;
+                back = present_frame(back);
+            }
         }
-        OV7670_FrameState = 0;
-        OV7670_CaptureStop();           /* stop right after frame end */
-        printf("capture frozen at frame boundary\r\n");
     }
-    ov7670_dump_capture();
-    OV7670_CaptureStop();
-
-    /* Display ONE frozen pattern frame. First try the normalized pattern
-     * renderer (anchors on the white bar, resamples to exact 80-px bars -
-     * no overlaps, no trailing sliver); if that fails, fall back to the
-     * raw 1:1 blit. */
-    LcdCamera_CameraFill(FB0, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0x001FU);
-    if (render_pattern(FB0))
-    {
-        printf("pattern: rendered normalized 8 bars\r\n");
-    }
-    else
-    {
-        printf("pattern: white bar not found - raw blit\r\n");
-        blit_snap(FB0);
-    }
-    LcdCamera_SetLayer0FB(FB0);
-    printf("static pattern held on LCD (left edge). Describe what you see.\r\n");
-    while (1)
-    {
-    }
+    pattern_mode = 0;
+    sensor_test_bar(0);
+    printf("test pattern OFF, live capture\r\n");
 
     fps = 0;
 
