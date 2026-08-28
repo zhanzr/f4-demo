@@ -81,39 +81,47 @@ Reference drivers consulted (adapted, not copied verbatim):
 
 ## Capture architecture
 
-- **QVGA 320x240 RGB565** (ALIENTEK `ov7670_init_reg_tbl` + `COM15=0xD0`):
-  the frame (153600 B = 38400 words) fits a single DMA buffer (≤0xFFFF
-  words) -> **DCMI SNAPSHOT mode** + `DMA_NORMAL` captures ONE complete,
-  VSYNC-aligned frame per transfer; the DMA stops - no HAL double-buffer
-  path, no tearing.
-- DCMI: `VSPOL=HIGH`, `HSPOL=LOW` (probe-proven), `PCKPOL=RISING`.
-- The frame lands in a private **SRAM buffer** (`snap_buf`); the LTDC never
-  reads a DMA-written buffer.
+- **VGA 640x480 RGB565** (sensor max resolution; iwatake2222/OpenMV no-FIFO
+  VGA recipe: `COM7=0x04`, `COM3=0x00`, `COM14=0x00`, `PCLK_DIV=0xF0`,
+  window `frame_control(158,14,10,490)` + `COM15=0xD0` full range):
+  the frame (614400 B = **153600 words**) exceeds the 16-bit DMA NDTR, so
+  the capture uses a **4-quarter double-buffer (DBM)** DMA path.
+- Frame buffer is **fixed in SDRAM at 0xD0300000** (after the LTDC FBs +
+  text region; DMA2 CAN reach SDRAM on F429) - 614400 B, no .bss.
+- **DCMI**: `VSPOL=HIGH`, `HSPOL=LOW`, `PCKPOL=RISING`
+  (VGA pixels flow on both; see bring-up notes).
+- The DCMI DMA is **CONTINUOUS + CIRCULAR** with a deterministic
+  **quarter-toggle** override of the HAL callbacks:
+  M0 writes Q0↔Q2 (base, +307200), M1 writes Q1↔Q3 (+153600, +460800), so
+  the ring fills Q0,Q1,Q2,Q3 forever (each = 153600 B). The DCMI FRAME
+  interrupt fires once per sensor frame; HAL_DCMI_FrameEventCallback
+  re-enables it and sets a flag.
+- **DCMI IRQ is self-contained** (`DCMI_IRQHandler`): it clears ERR/OVR
+  and handles FRAME only. The HAL's `HAL_DCMI_IRQHandler` is NOT called -
+  at VGA rates its error branch aborts the DMA and re-triggers the IRQ in
+  an **infinite ISR storm** (verified via debugger). LINE/VSYNC/ERR/OVR
+  DCMI ITs are disabled after `HAL_DCMI_Init` (HAL enables them; LINE
+  fires ~480x/frame).
 
-### Display mode: 1:1 window (no stretching)
+### Display mode: 1:1 full-height (no stretching)
 
-The 320x240 frame is copied **1:1, NOT scaled**, into a **centered window**
-of the 800x480 framebuffer:
-
-- window origin: `X = (800-320)/2 = 240`, `Y = (480-240)/2 = 120`
-- the surrounding margins stay the blue fill (`0x001F`)
-- no scaling artifacts; the CPU copy is ~5x lighter than the old 2.5x/2x
-  stretch blit -> **~15-16 FPS** (vs 12-13 stretched)
+The 640x480 frame fills the full 480-line LCD height, horizontally centered
+(X = (800-640)/2 = 80); the side margins stay the blue fill. No scaling
+artifacts. **~9-10 FPS** (VGA is 4x the pixels of QVGA; the DCMI at 9-10
+FPS is the sensor max for this XCLK).
 
 ### Boot test pattern (sensor built-in, 5 s)
 
 After `OV7670_Init()`, the app enables the OV7670's **internal 8-color
-test pattern** (`reg 0x70=0x00, 0x71=0x81`) for **5 seconds** - the frames
-flow through the identical DCMI snapshot path and are displayed like live
-frames. Then the pattern is disabled (`0x71=0x01`) and live capture runs.
-This gives an immediate sanity check that the DCMI path, the 1:1 blit and
-the colors are right before showing a real scene.
+test pattern** (`0x70=0x00, 0x71=0x81`) for **5 seconds** - real frames
+through the identical DCMI path, then live capture. It proves the DCMI
+path, the 1:1 blit and the colors are right before showing a real scene.
 
-- The main loop CPU-blits the frame into a **ping-pong** display framebuffer
-  (CAM0 @ 0xD0000000, CAM1 @ +768000) and swaps it at the vertical blanking
-  (`LcdCamera_SetLayer0FB`).
+- The main loop copies the newest frame into a **ping-pong** display
+  framebuffer (CAM0 @ 0xD0000000, CAM1 @ +768000) and swaps at the vertical
+  blanking (`LcdCamera_SetLayer0FB`).
 - Text: a transparent ARGB8888 overlay (`LcdCamera_AsciiString`, 5x7 font at
-  3x) shows the mode line + per-second `Frames:xx FPS` (~15-16).
+  3x) shows the mode line + per-second `Frames:xx FPS` (~9-10).
 
 ## Build & flash (gcc default)
 

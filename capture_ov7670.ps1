@@ -10,14 +10,20 @@ Remove-Item $tmpfile -ErrorAction SilentlyContinue
 $job = Start-Job -ArgumentList $tmpfile {
     param($tf)
     $p = [System.IO.Ports.SerialPort]::new('COM42', 115200, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
-    $p.ReadTimeout = 6000
+    $p.ReadTimeout = 1000            # short: survive long idle gaps
     $p.Open()
     $sw = [System.IO.StreamWriter]::new($tf, $true)
+    $end = [System.DateTime]::Now.AddSeconds(30)
     try {
-        while ($true) {
-            $line = $p.ReadLine()
-            $sw.WriteLine($line)
-            $sw.Flush()
+        while ([System.DateTime]::Now -lt $end) {
+            try {
+                $line = $p.ReadLine()
+                $sw.WriteLine($line)
+                $sw.Flush()
+            } catch {
+                # idle gap / partial read - keep listening until the window ends
+                Start-Sleep -Milliseconds 100
+            }
         }
     } catch { }
     $sw.Close()
@@ -26,7 +32,7 @@ $job = Start-Job -ArgumentList $tmpfile {
 
 Start-Sleep -Milliseconds 1000
 & $openocd -f $ifcfg -f $tgcfg -c 'adapter speed 4000' -c 'init' -c 'reset run' -c 'shutdown' 2>$null | Out-Null
-Start-Sleep -Seconds 20
+Start-Sleep -Seconds 30
 Stop-Job $job -ErrorAction SilentlyContinue
 Remove-Job $job -Force -ErrorAction SilentlyContinue
 if (Test-Path $tmpfile) {

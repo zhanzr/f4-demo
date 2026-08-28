@@ -258,6 +258,97 @@ static void scan_ring(void)
            total ? 100.0 * (double)nz / (double)total : 0.0);
 }
 
+/* Dump the row structure at the ASSUMED 1280 B/row pitch: print the 16-bit
+ * color at several columns for the first rows. If the bars are vertical,
+ * the color at each fixed column is the same across rows; if the row pitch
+ * is wrong, the column drifts and the colors change row-to-row. */
+static void row_structure_dump(void)
+{
+    const uint8_t *b = ring;
+    printf("row-structure dump (assumed 1280 B/row = 640 words):\r\n");
+    printf("  row:  c0     c320   c400   c480   c560   c600   c630\r\n");
+    for (uint32_t r = 0; r < 24; r++)
+    {
+        uint32_t base = r * 640u * 2u;            /* row r in bytes (assumed) */
+        if (base + 1280u > RING_SIZE) break;
+        printf("  %3lu:", (unsigned long)r);
+        static const uint32_t cols[7] = { 0, 320, 400, 480, 560, 600, 630 };
+        for (uint32_t k = 0; k < 7; k++)
+        {
+            uint16_t w = (uint16_t)(b[base + cols[k]*2u] |
+                                    ((uint16_t)b[base + cols[k]*2u + 1u] << 8));
+            printf(" %04x", (unsigned)w);
+        }
+        printf("\r\n");
+    }
+}
+
+/* Measure the real row step (bytes) of the captured stream by
+ * autocorrelation. A VGA 640px RGB565 row is 1280 B; but the OV7670 HREF
+ * spans the full sensor window (~784 px/row), so the true pitch can be
+ * ~1568 B when DCW/scaling are off. Search a WIDE range and also dump the
+ * raw words so the bar periodicity is visible directly. */
+static void measure_row_pitch(void)
+{
+    uint32_t best_p = 0, best_n = 0;
+    printf("row-pitch autocorrelation (candidates 1200..1700 B):\r\n");
+    for (uint32_t p = 1200; p <= 1700; p++)
+    {
+        uint32_t matches = 0, total = 0;
+        for (uint32_t i = 0; (i + p) < RING_SIZE && i < 3000; i++)
+        {
+            uint8_t a = ring[i];
+            if (a == 0xAA || a == 0x00) continue;
+            total++;
+            if (a == ring[i + p]) matches++;
+        }
+        if (total > 300 && matches > best_n)
+        {
+            best_n = matches;
+            best_p = p;
+        }
+    }
+    printf(">>> BEST row pitch = %lu B (%.1f px/row)\r\n",
+           (unsigned long)best_p, (double)best_p / 2.0);
+    printf("    640px RGB565 = 1280 B; 784px (full window) = 1568 B\n");
+
+    /* Raw word dump: bar periodicity visible as repeated word runs. */
+    printf("  ring[0..63] as words:\r\n    ");
+    for (uint32_t i = 0; i < 64; i++)
+    {
+        printf("%04x ", (unsigned)(ring[i*2] | ((uint16_t)ring[i*2+1] << 8)));
+        if ((i & 7) == 7) { printf("\r\n    "); }
+    }
+    printf("\r\n");
+
+    /* row-structure at the best + at 1568 B */
+    uint32_t pitches[2] = { best_p, 1568 };
+    const char *names[2] = { "best", "1568" };
+    for (uint32_t t = 0; t < 2; t++)
+    {
+        uint32_t pp = pitches[t] >> 1;            /* px per row */
+        uint32_t step = pitches[t];
+        printf("  row dump @ %s pitch (%lu B):\r\n    row: c0  c%d  c%d  c%d  c%d  c%d\n",
+               names[t], (unsigned long)pp, (unsigned long)(pp*3/4),
+               (unsigned long)(pp/2), (unsigned long)(pp/4), (unsigned long)(pp/8));
+        for (uint32_t r = 0; r < 12; r++)
+        {
+            uint32_t base = r * step;
+            if (base + step > RING_SIZE) break;
+            printf("    %3lu:", (unsigned long)r);
+            static const uint32_t frac[6] = {0, 1, 3, 4, 6, 7};  /* /8 */
+            for (uint32_t k = 0; k < 6; k++)
+            {
+                uint32_t col = pp * frac[k] / 8;
+                uint16_t w = (uint16_t)(ring[base + col*2] |
+                                        ((uint16_t)ring[base + col*2 + 1] << 8));
+                printf(" %04x", (unsigned)w);
+            }
+            printf("\r\n");
+        }
+    }
+}
+
 /* ---------------- GPIO activity test on the DCMI pins ---------------- */
 /* Reconfigure the DCMI data/sync pins as plain INPUTS and watch for any
  * toggling. Decisive: if a pin never changes while the color bar runs, the
@@ -390,7 +481,7 @@ int main(void)
     score_colorbar("OMV pc=F", DCMI_VSPOLARITY_HIGH, DCMI_HSPOLARITY_LOW,
                    DCMI_PCKPOLARITY_FALLING);
 
-    /* Keep the proven polarity for the summary dump. */
+    /* Keep the proven polarity for the summary dump + row-pitch measurement. */
     start_ring_capture(DCMI_VSPOLARITY_HIGH, DCMI_HSPOLARITY_LOW);
 
     printf("capturing 3 s (continuous circular ring)...\r\n");
@@ -409,6 +500,7 @@ int main(void)
     HAL_DCMI_Stop(&hdcmi);
     HAL_DMA_Abort(&hdma);
 
+    measure_row_pitch();
     scan_ring();
 
     printf("--- done ---\r\n");
