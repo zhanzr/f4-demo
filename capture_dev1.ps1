@@ -1,8 +1,9 @@
-# Capture dev1-f407 boot log: open COM55, reset target via OpenOCD, print 12s of serial.
+# Capture dev1-f407 boot log: open a serial port, reset target, print 12s of serial.
 # The debug probe can be either a Keil ULINK2 (CMSIS-DAP) or an ST-Link V2.
-#   -DPROBE=ulink2   (default) -> interface/cmsis-dap.cfg
-#   -DPROBE=stlink             -> interface/stlink.cfg
-param([string]$PROBE = 'ulink2')
+#   -PROBE=ulink2   (default) -> OpenOCD interface/cmsis-dap.cfg
+#   -PROBE=stlink             -> OpenOCD interface/stlink.cfg
+#   -COM=COM9                 -> serial port (default COM55)
+param([string]$PROBE = 'ulink2', [string]$COM = 'COM55')
 $ErrorActionPreference = 'Continue'
 $openocd = 'C:\msys64\mingw64\bin\openocd.exe'
 if ($PROBE -eq 'stlink') {
@@ -15,9 +16,9 @@ $outfile = 'd:\f4-demo\dev1_boot_log.txt'
 $tmpfile = 'd:\f4-demo\dev1_boot_log_tmp.txt'
 Remove-Item $tmpfile -ErrorAction SilentlyContinue
 
-$job = Start-Job -ArgumentList $tmpfile {
-    param($tf)
-    $p = [System.IO.Ports.SerialPort]::new('COM55', 115200, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
+$job = Start-Job -ArgumentList $tmpfile, $COM {
+    param($tf, $com)
+    $p = [System.IO.Ports.SerialPort]::new($com, 115200, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
     $p.ReadTimeout = 6000
     $p.Open()
     $sw = [System.IO.StreamWriter]::new($tf, $true)

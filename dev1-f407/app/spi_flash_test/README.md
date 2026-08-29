@@ -9,6 +9,18 @@ The test buffers live in internal SRAM (the dev1-f407 has no SDRAM), so the
 test size is 4 KiB to keep both write+read buffers comfortably inside the
 128 KB SRAM.
 
+## Result
+
+Measured on dev1-f407 hardware at 168 MHz CPU and 42 MHz SPI2:
+
+| Operation | Cycles | Throughput |
+| --------- | ------ | ---------- |
+| JEDEC ID | `0xEF4017` (Winbond W25Q64) | — |
+| Erase 64 KiB | 17,280,605 | — |
+| Program 4 KiB | 2,035,313 | 330.170 KiB/s |
+| Read 4 KiB | 869,718 | 772.664 KiB/s |
+| Verify | PASS (0 errors) | — |
+
 ## Build and flash
 
 ```bash

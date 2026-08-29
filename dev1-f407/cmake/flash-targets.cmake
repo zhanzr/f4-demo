@@ -5,10 +5,11 @@
 #   - ST-Link V2   (STMicroelectronics ST-LINK, VID:PID 0483:3752)
 #
 # Targets:
-#   ninja flash        - probe-rs download (default; auto-selects the probe)
-#   ninja flash-ocd    - OpenOCD (interface/cmsis-dap + target/stm32f4x, SWD)
-#   ninja swv          - monitor SWV/ITM printf via probe-rs `itm swo`.
-#                        BLOCKS for the duration; Ctrl-C to stop.
+#   ninja flash          - probe-rs download (default; auto-selects the probe)
+#   ninja flash-ocd      - OpenOCD (interface/cmsis-dap or stlink, SWD)
+#   ninja flash-cube     - STM32CubeProgrammer CLI (ST-Link, SWD)
+#   ninja swv            - monitor SWV/ITM printf via probe-rs `itm swo`.
+#                          BLOCKS for the duration; Ctrl-C to stop.
 #
 # SWV parameters: TPIU clock (TRACECLKIN = HCLK) 168 MHz -> SWO baud 2 Mbaud.
 # Duration 600000 ms (10 min). Adjust the BAUD/DURATION to taste.
@@ -18,11 +19,18 @@
 #   -DPROBE_SELECTOR=c251:2722:V0010M9E                   (Keil ULINK2)
 #   -DPROBE_SELECTOR=auto   (default: let probe-rs pick the only connected probe)
 #
+# OpenOCD interface selection:
+#   -DOPENOCD_INTERFACE=cmsis-dap   (default; Keil ULINK2)
+#   -DOPENOCD_INTERFACE=stlink      (ST-Link V2)
+#
 # Overrides:
 #   -DPROBE_RS=/path/to/probe-rs   -DOPENOCD=/path/to/openocd
+#   -DSTM32_CUBE_PROG=/path/to/STM32_Programmer_CLI.exe
 
 set(PROBE_SELECTOR "auto" CACHE STRING
     "probe-rs --probe selector (VID:PID[:Serial]); 'auto' lets probe-rs pick the only connected probe")
+set(OPENOCD_INTERFACE "cmsis-dap" CACHE STRING
+    "OpenOCD interface: cmsis-dap (ULINK2) or stlink (ST-Link V2)")
 
 find_program(PROBE_RS NAMES probe-rs probe-rs.exe
     HINTS "$ENV{USERPROFILE}/.cargo/bin" "$ENV{CARGO_HOME}/bin"
@@ -30,6 +38,9 @@ find_program(PROBE_RS NAMES probe-rs probe-rs.exe
 find_program(OPENOCD NAMES openocd openocd.exe
     HINTS "C:/msys64/mingw64/bin"
     DOC "OpenOCD binary")
+find_program(STM32_CUBE_PROG NAMES STM32_Programmer_CLI.exe
+    HINTS "D:/Program Files/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin"
+    DOC "STM32CubeProgrammer CLI")
 
 set(BIN_HEX "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.hex")
 set(OPENOCD_CFG "${CMAKE_CURRENT_LIST_DIR}/openocd_stm32f407ve.cfg")
@@ -60,14 +71,28 @@ endif()
 # --- OpenOCD -----------------------------------------------------------------
 if(OPENOCD)
     add_custom_target(flash-ocd
-        COMMAND "${OPENOCD}" -f "${OPENOCD_CFG}"
+        COMMAND "${OPENOCD}" -c "set OPENOCD_INTERFACE ${OPENOCD_INTERFACE}"
+                    -f "${OPENOCD_CFG}"
                     -c "program ${BIN_HEX} verify reset exit"
         DEPENDS ${PROJECT_NAME}.elf
-        COMMENT "Flashing ${PROJECT_NAME}.hex to STM32F407VET6 via OpenOCD (SWD) ..."
+        COMMENT "Flashing ${PROJECT_NAME}.hex to STM32F407VET6 via OpenOCD (${OPENOCD_INTERFACE}, SWD) ..."
         USES_TERMINAL)
 else()
     add_custom_target(flash-ocd
         COMMAND ${CMAKE_COMMAND} -E echo "OpenOCD not found. Install it (winget install xpack-dev-tools.openocd-xpack) or pass -DOPENOCD=/path/to/openocd.")
+endif()
+
+# --- STM32CubeProgrammer CLI -------------------------------------------------
+if(STM32_CUBE_PROG)
+    add_custom_target(flash-cube
+        COMMAND "${STM32_CUBE_PROG}" -c port=SWD mode=UR
+                    -w "${BIN_HEX}" -v -rst
+        DEPENDS ${PROJECT_NAME}.elf
+        COMMENT "Flashing ${PROJECT_NAME}.hex to STM32F407VET6 via STM32CubeProgrammer CLI (ST-Link, SWD) ..."
+        USES_TERMINAL)
+else()
+    add_custom_target(flash-cube
+        COMMAND ${CMAKE_COMMAND} -E echo "STM32CubeProgrammer CLI not found. Install STM32CubeProgrammer or pass -DSTM32_CUBE_PROG=/path/to/STM32_Programmer_CLI.exe.")
 endif()
 
 # --- SWV / ITM printf monitor ------------------------------------------------

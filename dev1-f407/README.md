@@ -60,14 +60,22 @@ helpers in `cmake/`.
 
 **How to connect.** Power the board and plug in two USB things:
 
-1. **ULINK2** (or any SWD/CMSIS-DAP probe) on the debug header for flashing
-   and reset — `probe-rs` sees it as `Keil ULINK2 CMSIS-DAP`
-   (`c251:2722:V0010M9E`).
+1. **ULINK2** (or any SWD/CMSIS-DAP probe) **or an ST-Link V2** on the debug
+   header for flashing and reset — `probe-rs` sees the ULINK2 as `Keil ULINK2
+   CMSIS-DAP` (`c251:2722:V0010M9E`) and the ST-Link V2 as `STLink V2-1`
+   (`0483:3752:...`).
 2. **USB-serial adapter** wired to the on-board RS232/485 transceiver for the
    console — **115200 baud, 8-N-1** (the adapter shows up as e.g. `COM19`).
 
 No extra wiring needed on the board itself; everything lives on the board (see
 the photos above and the schematic PDF).
+
+> **Note on the ST-Link V2 "Target voltage (VAPP) is 0.02 V" warning.** When
+> the board is powered from its own supply (not from the ST-Link's 3.3 V
+> output), the ST-Link's VAPP sense pin reads ~0 V and probe-rs / OpenOCD /
+> STM32CubeProgrammer all print a "target voltage too low" warning. This is
+> **harmless and ignorable** — the board is powered, and all three tools
+> connect, flash, and verify successfully despite the warning.
 
 **How to choose a toolchain.** Two options, decided once:
 
@@ -85,9 +93,14 @@ the photos above and the schematic PDF).
 **How to flash / run.** In a project's build dir:
 
 ```bash
-ninja flash        # probe-rs download + reset over ULINK2 SWD (recommended)
-ninja flash-ocd    # alternative via OpenOCD
+ninja flash          # probe-rs download + reset (auto-detects ULINK2 or ST-Link V2)
+ninja flash-ocd      # alternative via OpenOCD (default cmsis-dap; use -DOPENOCD_INTERFACE=stlink for ST-Link V2)
+ninja flash-cube     # alternative via STM32CubeProgrammer CLI (ST-Link V2)
 ```
+
+The `flash` target auto-detects the connected probe. To force a specific one,
+configure with `-DPROBE_SELECTOR=0483:3752:...` (ST-Link V2) or
+`-DPROBE_SELECTOR=c251:2722:V0010M9E` (ULINK2).
 
 **How to verify.** Open the serial console first, then flash (or `probe-rs
 reset`) and watch the banner. `blink` prints periodic `blink: LED cycle N`
@@ -103,8 +116,9 @@ time plus an iteration count within the expected range.
 - STM32F4 HAL + CMSIS — **vendored** in the repo root `drivers/` (trimmed
   subset of STM32Cube_FW_F4 v1.28.3; see the root `README.md` for how to use
   the full package instead)
-- probe-rs 0.32 (`cargo install probe-rs-tools`) — sees the ULINK2 as `Keil ULINK2 CMSIS-DAP` (`c251:2722:V0010M9E`)
+- probe-rs 0.32 (`cargo install probe-rs-tools`) — sees the ULINK2 as `Keil ULINK2 CMSIS-DAP` (`c251:2722:V0010M9E`) and the ST-Link V2 as `STLink V2-1` (`0483:3752:...`)
 - OpenOCD 0.12 (`C:/msys64/mingw64/bin/openocd.exe`) — alternative flasher
+- STM32CubeProgrammer CLI (`D:/Program Files/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI.exe`) — alternative flasher
 - CMake ≥ 3.13 + Ninja
 
 ## armclang hybrid toolchain (benchmarks)
