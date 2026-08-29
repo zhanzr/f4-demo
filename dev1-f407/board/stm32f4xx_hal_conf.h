@@ -24,6 +24,8 @@ extern "C" {
 #define HAL_DMA_MODULE_ENABLED
 #define HAL_ADC_MODULE_ENABLED
 #define HAL_ETH_MODULE_ENABLED
+#define HAL_I2C_MODULE_ENABLED
+#define HAL_SPI_MODULE_ENABLED
 
 /* ########################## Oscillator Values ############################# */
 #define HSE_VALUE    ((uint32_t)25000000U) /*!< Value of the External oscillator in Hz. Custom board: 25 MHz. */
@@ -95,6 +97,14 @@ void assert_failed(uint8_t *file, uint32_t line);
 #if defined(HAL_ETH_MODULE_ENABLED)
   #include "stm32f4xx_hal_eth.h"
 #endif /* HAL_ETH_MODULE_ENABLED */
+
+#if defined(HAL_I2C_MODULE_ENABLED)
+  #include "stm32f4xx_hal_i2c.h"
+#endif /* HAL_I2C_MODULE_ENABLED */
+
+#if defined(HAL_SPI_MODULE_ENABLED)
+  #include "stm32f4xx_hal_spi.h"
+#endif /* HAL_SPI_MODULE_ENABLED */
 
 #ifdef __cplusplus
 }

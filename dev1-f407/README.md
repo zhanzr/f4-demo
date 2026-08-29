@@ -43,8 +43,8 @@ Schematic / board manual: `board_sch.pdf`.
 | `app/dhry_168m`    | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_168m`| CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/eth_http_server` | HTTP server over Ethernet (DP83848). ⚠️ **BROKEN** — see the Ethernet note above. |
-| `app/eeprom_test`  | AT24C02 EEPROM (I2C2: PB8=SCL, PB9=SDA) erase/program/read test |
-| `app/spi_flash_test` | W25Q64 SPI flash (SPI1: PE3=CS, PC2=MISO, PB10=SCK, PC3=MOSI) erase/program/read test |
+| `app/eeprom_test`  | AT24C02 EEPROM (I2C1: PB8=SCL, PB9=SDA) erase/program/read test |
+| `app/spi_flash_test` | W25Q64 SPI flash (SPI2: PE3=CS, PC2=MISO, PB10=SCK, PC3=MOSI) erase/program/read test |
 
 `blink` is built with arm-none-eabi-gcc. The two benchmarks build with either
 **arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)** — selected with

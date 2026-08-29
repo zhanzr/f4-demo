@@ -53,10 +53,12 @@ function(stm32f407_apply_board TGT OPT)
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_gpio.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_flash.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_flash_ex.c
+        ${STM32F4_HAL_SRC}/stm32f4xx_hal_i2c.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_pwr.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_pwr_ex.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_rcc.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_rcc_ex.c
+        ${STM32F4_HAL_SRC}/stm32f4xx_hal_spi.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_uart.c
     )
 
