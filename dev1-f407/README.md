@@ -26,13 +26,25 @@ Schematic / board manual: `board_sch.pdf`.
 - Debug: Keil ULINK2 on the JTAG header, driven in **SWD** mode (TRACESWO is
   not used)
 
+> ⚠️ **Ethernet (DP83848) is BROKEN on this board.** The PHY is detected on
+> MDIO (addr 1, ID `2000:5c90`) and the link negotiates, but the RMII link is
+> unstable — it flaps between 10M/100M, drops ~50% of frames, and cannot
+> sustain a usable TCP connection (HTTP times out). Confirmed with both this
+> repo's `app/eth_http_server` AND a known-good vendor reference project
+> (`pav2000/stm32f407-dp83848`) using the same pins — both fail identically.
+> This is a **hardware** issue (RMII 50 MHz clock / PHY strap / wiring), not
+> software. Do not rely on the Ethernet interface.
+
 ## Projects (`app/`)
 
 | Project            | What it does |
 | ------------------ | ------------ |
-| `app/blink`        | Cycles LED1/2/3 every 250 ms @ 168 MHz + UART banner/tick prints (GCC) |
+| `app/blink_hello`  | Cycles LED1/2/3 every 250 ms @ 168 MHz + UART banner/tick prints + internal ADC (VREFINT/temp/VBAT) sampling (GCC) |
 | `app/dhry_168m`    | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_168m`| CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
+| `app/eth_http_server` | HTTP server over Ethernet (DP83848). ⚠️ **BROKEN** — see the Ethernet note above. |
+| `app/eeprom_test`  | AT24C02 EEPROM (I2C2: PB8=SCL, PB9=SDA) erase/program/read test |
+| `app/spi_flash_test` | W25Q64 SPI flash (SPI1: PE3=CS, PC2=MISO, PB10=SCK, PC3=MOSI) erase/program/read test |
 
 `blink` is built with arm-none-eabi-gcc. The two benchmarks build with either
 **arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)** — selected with

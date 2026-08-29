@@ -1,0 +1,538 @@
+/**
+  * @file    eth_http_server/src/ethernetif.c
+  * @brief   Ethernet network interface driver for lwIP (NO_SYS / raw API),
+  *          dev1-f407 board (RMII + DP83848 PHY).
+  *
+  * Based on the STM32F769I-Discovery eth_http ethernetif.c, re-targeted to
+  * the STM32F407 HAL + the dev1-f407 DP83848 PHY pins.
+  *
+  * RMII pins (dev1-f407):
+  *   RMII_RX_CLK -> PA1, MDIO -> PA2, MDC -> PC1, CRS_DV -> PA7,
+  *   RXD0 -> PC4, RXD1 -> PC5, TX_EN -> PB11, TXD0 -> PB12, TXD1 -> PB13
+  *   PHY_NRST -> tied to MCU NRST (no separate GPIO reset)
+  *
+  * The DP83848 has a 50 MHz active clock generator, so the PHY drives the
+  * RMII 50 MHz reference clock itself (no MCU clock output needed).
+  *
+  * The ETH DMA descriptors/RX buffers live in internal SRAM (.sram_dma) -
+  * the F407 has no D-cache, so CPU<->DMA are coherent with no cache
+  * maintenance and no special memory region.
+  */
+
+/* Includes ------------------------------------------------------------------*/
+#include "stm32f4xx_hal.h"
+#include "main.h"
+#include "lwip/opt.h"
+#include "lwip/timeouts.h"
+#include "netif/ethernet.h"
+#include "netif/etharp.h"
+#include "ethernetif.h"
+#include "dp83848_phy.h"
+#include <stdio.h>
+#include <string.h>
+
+/* Private define ------------------------------------------------------------*/
+#define IFNAME0 's'
+#define IFNAME1 't'
+
+#define ETH_DMA_TRANSMIT_TIMEOUT                (20U)
+
+#ifndef ETH_RX_BUF_SIZE
+#define ETH_RX_BUF_SIZE                         1536U
+#endif
+#ifndef ETH_RX_DESC_CNT
+#define ETH_RX_DESC_CNT                         4U
+#endif
+#ifndef ETH_TX_DESC_CNT
+#define ETH_TX_DESC_CNT                         4U
+#endif
+
+/* Receive buffers: must be > ETH_RX_DESC_CNT (HAL may need spares). 8
+ * buffers (8 x 1536 = 12 KB) fit the dev1-f407's 128 KB SRAM alongside
+ * the lwIP heap. */
+#define ETH_RX_BUFFER_CNT                       8U
+
+/* TX bounce buffer: full Ethernet frame (MTU + headers + FCS + margin). */
+#define ETH_TX_BUF_SIZE                         (ETH_MAX_PAYLOAD + 32U)
+
+/* Private variables ---------------------------------------------------------*/
+typedef enum
+{
+  RX_ALLOC_OK       = 0x00,
+  RX_ALLOC_ERROR    = 0x01
+} RxAllocStatusTypeDef;
+
+typedef struct
+{
+  struct pbuf_custom pbuf_custom;
+  uint8_t buff[(ETH_RX_BUF_SIZE + 31) & ~31];
+} RxBuff_t;
+
+/* The Ethernet DMA buffers live in internal SRAM (.sram_dma): the ETH DMA
+ * can reach it, and there is no D-cache on the F4, so CPU and DMA stay
+ * coherent with no cache maintenance. */
+__attribute__((section(".sram_dma"), used)) ETH_DMADescTypeDef DMARxDscrTab[ETH_RX_DESC_CNT];
+__attribute__((section(".sram_dma"), used)) ETH_DMADescTypeDef DMATxDscrTab[ETH_TX_DESC_CNT];
+__attribute__((section(".sram_dma"), used)) static RxBuff_t    rx_buffs[ETH_RX_BUFFER_CNT];
+__attribute__((section(".sram_dma"), used)) static uint8_t     tx_bounce[ETH_TX_BUF_SIZE];
+
+/* Simple bitmap allocator for the RX buffers (they are freed out of order). */
+static uint16_t rx_used;
+
+static RxBuff_t *rx_buff_alloc(void)
+{
+  int i;
+  for (i = 0; i < ETH_RX_BUFFER_CNT; i++)
+  {
+    if ((rx_used & (1u << i)) == 0)
+    {
+      rx_used |= (1u << i);
+      return &rx_buffs[i];
+    }
+  }
+  return NULL;
+}
+
+static void rx_buff_free(RxBuff_t *b)
+{
+  rx_used &= ~(1u << (b - rx_buffs));
+}
+
+/* Global Ethernet handle */
+ETH_HandleTypeDef EthHandle;
+ETH_TxPacketConfigTypeDef TxConfig;
+static uint8_t     RxAllocStatus;
+
+/* Received-frame counter (link health diagnostics). */
+volatile uint32_t eth_rx_cnt;
+volatile uint32_t eth_tx_cnt;
+volatile uint32_t eth_tx_err;
+
+/* Private function prototypes -----------------------------------------------*/
+extern void Error_Handler(void);
+int32_t ETH_PHY_IO_Init(void);
+int32_t ETH_PHY_IO_DeInit (void);
+int32_t ETH_PHY_IO_ReadReg(uint32_t DevAddr, uint32_t RegAddr, uint32_t *pRegVal);
+int32_t ETH_PHY_IO_WriteReg(uint32_t DevAddr, uint32_t RegAddr, uint32_t RegVal);
+int32_t ETH_PHY_IO_GetTick(void);
+void pbuf_free_custom(struct pbuf *p);
+
+/* Private functions ---------------------------------------------------------*/
+/*******************************************************************************
+                       LL Driver Interface ( LwIP stack --> ETH)
+*******************************************************************************/
+/**
+  * @brief  In this function, the hardware should be initialized.
+  *         Called from ethernetif_init().
+  * @param  netif the already initialized lwip network interface structure
+  */
+static void low_level_init(struct netif *netif)
+{
+  uint8_t macaddress[6] = {ETH_MAC_ADDR0, ETH_MAC_ADDR1, ETH_MAC_ADDR2,
+                           ETH_MAC_ADDR3, ETH_MAC_ADDR4, ETH_MAC_ADDR5};
+
+  EthHandle.Instance = ETH;
+  EthHandle.Init.MACAddr = macaddress;
+  EthHandle.Init.MediaInterface = HAL_ETH_RMII_MODE;
+  EthHandle.Init.RxDesc = DMARxDscrTab;
+  EthHandle.Init.TxDesc = DMATxDscrTab;
+  EthHandle.Init.RxBuffLen = ETH_RX_BUF_SIZE;
+
+  /* Configure ethernet peripheral (GPIOs, clocks, MAC, DMA) */
+  if (HAL_ETH_Init(&EthHandle) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* Set MAC hardware address length */
+  netif->hwaddr_len = ETH_HWADDR_LEN;
+
+  /* Set MAC hardware address */
+  netif->hwaddr[0] = ETH_MAC_ADDR0;
+  netif->hwaddr[1] = ETH_MAC_ADDR1;
+  netif->hwaddr[2] = ETH_MAC_ADDR2;
+  netif->hwaddr[3] = ETH_MAC_ADDR3;
+  netif->hwaddr[4] = ETH_MAC_ADDR4;
+  netif->hwaddr[5] = ETH_MAC_ADDR5;
+
+  /* Maximum transfer unit */
+  netif->mtu = ETH_MAX_PAYLOAD;
+
+  /* Device capabilities */
+  netif->flags |= NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP;
+
+  /* Set Tx packet config common parameters */
+  memset(&TxConfig, 0, sizeof(ETH_TxPacketConfigTypeDef));
+  TxConfig.Attributes = ETH_TX_PACKETS_FEATURES_CSUM | ETH_TX_PACKETS_FEATURES_CRCPAD;
+  TxConfig.ChecksumCtrl = ETH_CHECKSUM_IPHDR_PAYLOAD_INSERT_PHDR_CALC;
+  TxConfig.CRCPadCtrl = ETH_CRC_PAD_INSERT;
+
+  /* Initialize the DP83848 ETH PHY */
+  if (DP83848_PhyInit(&EthHandle) != 0)
+  {
+    printf("ETH: DP83848 PHY not responding on MDIO (check PHY wiring)\r\n");
+    netif_set_link_down(netif);
+    netif_set_down(netif);
+    return;
+  }
+  printf("ETH: DP83848 PHY OK (ID %04x:%04x)\r\n",
+         (unsigned)DP83848_ReadReg(&EthHandle, DP83848_PHYI1R),
+         (unsigned)DP83848_ReadReg(&EthHandle, DP83848_PHYI2R));
+
+  /* Vendor-style synchronous bring-up (stm32f4x7_eth.c ETH_Init):
+   * DP83848_PhyInit already did: soft reset -> wait for link ->
+   * enable auto-negotiation -> wait for auto-negotiation complete.
+   * Now read the negotiated speed/duplex from PHY_SR (reg 0x10) with
+   * the vendor bit interpretation (bit1 = speed: 0=100M, 1=10M;
+   * bit2 = duplex: 1=full), configure the MAC once, and start it.
+   *
+   * The MAC is NEVER stopped afterwards - the vendor example does not
+   * poll the link, and stopping/starting the MAC (with the RMII
+   * relatch) is what caused the link to flap. */
+  if ((DP83848_ReadReg(&EthHandle, DP83848_BSR) & DP83848_BSR_LINK_STATUS) == 0U)
+  {
+    printf("ETH: no link (cable unplugged?)\r\n");
+    netif_set_link_down(netif);
+    netif_set_down(netif);
+    return;
+  }
+
+  {
+    ETH_MACConfigTypeDef MACConf = {0};
+    uint32_t sr = DP83848_ReadReg(&EthHandle, DP83848_PHYSCSR);
+    uint32_t speed10 = (sr & 0x0002U) ? 1U : 0U;  /* bit1: 1=10M, 0=100M */
+    uint32_t full   = (sr & 0x0004U) ? 1U : 0U;   /* bit2: 1=full, 0=half */
+
+    HAL_ETH_GetMACConfig(&EthHandle, &MACConf);
+    MACConf.Speed = speed10 ? ETH_SPEED_10M : ETH_SPEED_100M;
+    MACConf.DuplexMode = full ? ETH_FULLDUPLEX_MODE : ETH_HALFDUPLEX_MODE;
+    HAL_ETH_SetMACConfig(&EthHandle, &MACConf);
+
+    if (HAL_ETH_Start(&EthHandle) != HAL_OK)
+    {
+      printf("ETH: HAL_ETH_Start failed\r\n");
+      netif_set_link_down(netif);
+      netif_set_down(netif);
+      return;
+    }
+
+    printf("ETH: link UP, %s %s\r\n",
+           speed10 ? "10M" : "100M", full ? "full" : "half");
+    netif_set_up(netif);
+    netif_set_link_up(netif);
+  }
+}
+
+/**
+  * @brief  Transmit a packet. The pbuf payload lives in SDRAM (lwIP MEM),
+  *         which the ETH DMA can reach on the F4, but we still bounce it
+  *         through internal SRAM to be safe and descriptor-friendly.
+  */
+static err_t low_level_output(struct netif *netif, struct pbuf *p)
+{
+  struct pbuf *q;
+  ETH_BufferTypeDef txb;
+  uint8_t *dst = tx_bounce;
+
+  if (p->tot_len > ETH_TX_BUF_SIZE)
+  {
+    return ERR_MEM;
+  }
+
+  for (q = p; q != NULL; q = q->next)
+  {
+    memcpy(dst, q->payload, q->len);
+    dst += q->len;
+  }
+
+  memset(&TxConfig, 0, sizeof(ETH_TxPacketConfigTypeDef));
+  TxConfig.Attributes = ETH_TX_PACKETS_FEATURES_CSUM | ETH_TX_PACKETS_FEATURES_CRCPAD;
+  TxConfig.ChecksumCtrl = ETH_CHECKSUM_IPHDR_PAYLOAD_INSERT_PHDR_CALC;
+  TxConfig.CRCPadCtrl = ETH_CRC_PAD_INSERT;
+  TxConfig.Length = p->tot_len;
+  txb.buffer = tx_bounce;
+  txb.len = p->tot_len;
+  txb.next = NULL;
+  TxConfig.TxBuffer = &txb;
+  TxConfig.pData = NULL;
+
+  if (HAL_ETH_Transmit(&EthHandle, &TxConfig, ETH_DMA_TRANSMIT_TIMEOUT) != HAL_OK)
+  {
+    eth_tx_err++;
+    return ERR_IF;
+  }
+
+  eth_tx_cnt++;
+  return ERR_OK;
+}
+
+/**
+  * @brief  Read a received packet into a pbuf (wraps an SRAM RX buffer).
+  */
+static struct pbuf *low_level_input(struct netif *netif)
+{
+  struct pbuf *p = NULL;
+
+  if (RxAllocStatus == RX_ALLOC_OK)
+  {
+    HAL_ETH_ReadData(&EthHandle, (void **)&p);
+  }
+  if (p != NULL)
+  {
+    eth_rx_cnt++;
+  }
+  return p;
+}
+
+/**
+  * @brief  Poll for received packets and feed them to lwIP.
+  */
+void ethernetif_input(struct netif *netif)
+{
+  struct pbuf *p;
+
+  do
+  {
+    p = low_level_input(netif);
+    if (p != NULL)
+    {
+      if (netif->input(p, netif) != ERR_OK)
+      {
+        pbuf_free(p);
+      }
+    }
+  } while (p != NULL);
+}
+
+/**
+  * @brief  lwIP netif init entry point.
+  */
+err_t ethernetif_init(struct netif *netif)
+{
+  LWIP_ASSERT("netif != NULL", (netif != NULL));
+
+#if LWIP_NETIF_HOSTNAME
+  netif->hostname = "dev1-f407";
+#endif
+
+  netif->name[0] = IFNAME0;
+  netif->name[1] = IFNAME1;
+  netif->output = etharp_output;
+  netif->linkoutput = low_level_output;
+
+  low_level_init(netif);
+
+  return ERR_OK;
+}
+
+/**
+  * @brief  Custom Rx pbuf free callback: returns the buffer to the pool.
+  */
+void pbuf_free_custom(struct pbuf *p)
+{
+  struct pbuf_custom *custom_pbuf = (struct pbuf_custom *)p;
+
+  rx_buff_free((RxBuff_t *)custom_pbuf);
+  if (RxAllocStatus == RX_ALLOC_ERROR)
+  {
+    RxAllocStatus = RX_ALLOC_OK;
+  }
+}
+
+/**
+  * @brief  Returns the current time in milliseconds (NO_SYS).
+  */
+u32_t sys_now(void)
+{
+  return HAL_GetTick();
+}
+
+/**
+  * @brief  Simple LCG fallback for lwIP's LWIP_RAND() (DNS TXID, DHCP xid).
+  */
+unsigned int lwip_rand_fallback(void)
+{
+  static uint32_t seed = 0x12345678U;
+
+  seed = seed * 1664525U + 1013904223U;
+  return (unsigned int)(seed >> 16);
+}
+
+/*******************************************************************************
+                       Ethernet MSP Routines
+*******************************************************************************/
+/**
+  * @brief  Initializes the ETH MSP: clocks + RMII GPIOs (fire-f429).
+  */
+void HAL_ETH_MspInit(ETH_HandleTypeDef *heth)
+{
+  GPIO_InitTypeDef GPIO_InitStructure;
+
+  /* Enable GPIOs clocks */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+
+  /* Ethernet pins configuration (RMII, dev1-f407):
+       RMII_RX_CLK  -> PA1
+       MDIO         -> PA2
+       MDC          -> PC1
+       CRS_DV       -> PA7
+       RXD0         -> PC4
+       RXD1         -> PC5
+       TX_EN        -> PB11
+       TXD0         -> PB12
+       TXD1         -> PB13   */
+
+  GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStructure.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStructure.Pull = GPIO_NOPULL;
+  GPIO_InitStructure.Alternate = GPIO_AF11_ETH;
+
+  /* PA1, PA2, PA7 */
+  GPIO_InitStructure.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_7;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+  /* PB11, PB12, PB13 */
+  GPIO_InitStructure.Pin = GPIO_PIN_11 | GPIO_PIN_12 | GPIO_PIN_13;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+  /* PC1, PC4, PC5 */
+  GPIO_InitStructure.Pin = GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+  /* Enable ETHERNET clock */
+  __HAL_RCC_ETH_CLK_ENABLE();
+}
+
+/*******************************************************************************
+                       PHY IO Functions
+*******************************************************************************/
+int32_t ETH_PHY_IO_Init(void)
+{
+  HAL_ETH_SetMDIOClockRange(&EthHandle);
+  return 0;
+}
+
+int32_t ETH_PHY_IO_DeInit(void)
+{
+  return 0;
+}
+
+int32_t ETH_PHY_IO_ReadReg(uint32_t DevAddr, uint32_t RegAddr, uint32_t *pRegVal)
+{
+  if (HAL_ETH_ReadPHYRegister(&EthHandle, DevAddr, RegAddr, pRegVal) != HAL_OK)
+  {
+    return -1;
+  }
+  return 0;
+}
+
+int32_t ETH_PHY_IO_WriteReg(uint32_t DevAddr, uint32_t RegAddr, uint32_t RegVal)
+{
+  if (HAL_ETH_WritePHYRegister(&EthHandle, DevAddr, RegAddr, RegVal) != HAL_OK)
+  {
+    return -1;
+  }
+  return 0;
+}
+
+int32_t ETH_PHY_IO_GetTick(void)
+{
+  return HAL_GetTick();
+}
+
+/**
+  * @brief  Re-latch the RMII interface selection.
+  *
+  * Must be called only while the Ethernet MAC is stopped: on the F4,
+  * SYSCFG->PMC's MII/RMII bit routes the 50 MHz RMII reference clock, and
+  * toggling it while the MAC runs glitches the clock and drops the PHY
+  * link. Called from the link-up path before HAL_ETH_Start().
+  */
+void eth_rmii_relatch(void)
+{
+  SYSCFG->PMC &= ~SYSCFG_PMC_MII_RMII_SEL;
+  SYSCFG->PMC |= HAL_ETH_RMII_MODE;
+  (void)SYSCFG->PMC;
+}
+
+/**
+  * @brief  Check the PHY link state and report changes to lwIP.
+  *
+  * The MAC is started exactly once during low_level_init (vendor-style
+  * synchronous bring-up) and is NEVER stopped here. Stopping/starting
+  * the MAC - and re-latching SYSCFG->PMC - while the PHY is running
+  * glitches the RMII clock and makes the link flap. This function only
+  * tracks link up/down for the lwIP link callback.
+  */
+void ethernet_link_check_state(struct netif *netif)
+{
+  DP83848_StatusTypeDef PHYLinkState = DP83848_PhyGetLinkState(&EthHandle);
+  uint32_t bsr = DP83848_ReadReg(&EthHandle, DP83848_BSR);
+  uint32_t sr  = DP83848_ReadReg(&EthHandle, DP83848_PHYSCSR);
+
+  if (PHYLinkState == DP83848_PHY_LINK_DOWN)
+  {
+    if (netif_is_link_up(netif))
+    {
+      printf("ETH: link DOWN (BSR 0x%04lx PHYSCSR 0x%04lx)\r\n",
+             (unsigned long)bsr, (unsigned long)sr);
+      netif_set_link_down(netif);
+    }
+  }
+  else
+  {
+    if (!netif_is_link_up(netif))
+    {
+      printf("ETH: link UP (BSR 0x%04lx PHYSCSR 0x%04lx)\r\n",
+             (unsigned long)bsr, (unsigned long)sr);
+      netif_set_link_up(netif);
+    }
+  }
+}
+
+void HAL_ETH_RxAllocateCallback(uint8_t **buff)
+{
+  RxBuff_t *b = rx_buff_alloc();
+
+  if (b != NULL)
+  {
+    *buff = b->buff;
+    b->pbuf_custom.custom_free_function = pbuf_free_custom;
+    pbuf_alloced_custom(PBUF_RAW, 0, PBUF_REF, &b->pbuf_custom, *buff, ETH_RX_BUF_SIZE);
+  }
+  else
+  {
+    RxAllocStatus = RX_ALLOC_ERROR;
+    *buff = NULL;
+  }
+}
+
+void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd, uint8_t *buff, uint16_t Length)
+{
+  struct pbuf **ppStart = (struct pbuf **)pStart;
+  struct pbuf **ppEnd = (struct pbuf **)pEnd;
+  struct pbuf *p = NULL;
+  RxBuff_t *b = (RxBuff_t *)((uint8_t *)buff - offsetof(RxBuff_t, buff));
+
+  p = (struct pbuf *)&b->pbuf_custom;
+  p->next = NULL;
+  p->tot_len = 0;
+  p->len = Length;
+
+  if (!*ppStart)
+  {
+    *ppStart = p;
+  }
+  else
+  {
+    (*ppEnd)->next = p;
+  }
+  *ppEnd = p;
+
+  for (p = *ppStart; p != NULL; p = p->next)
+  {
+    p->tot_len += Length;
+  }
+}

@@ -116,6 +116,16 @@ SECTIONS
     __bss_end__ = _ebss;
   } >RAM
 
+  /* DMA buffers (ETH descriptors/RX/TX). The F407 has no D-cache, so these
+   * can live in normal RAM - the section is kept for source compatibility
+   * with the fire-f429 ethernetif.c. */
+  .sram_dma (NOLOAD) :
+  {
+    . = ALIGN(32);
+    *(.sram_dma)
+    . = ALIGN(32);
+  } >RAM
+
   ._user_heap_stack :
   {
     . = ALIGN(8);
