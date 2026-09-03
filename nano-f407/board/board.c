@@ -3,12 +3,17 @@
   * @brief   Board init for the STM32F407VET6 "nano-f407" board.
   *
   * Clock tree (HSE = 8 MHz):
-  *   PLLM=8   -> PLL input  1 MHz
-  *   PLLN=336 -> VCO      336 MHz
-  *   PLLP=2   -> SYSCLK   168 MHz
-  *   PLLQ=7   -> 48 MHz    (USB/SDIO, not used here)
-  *   AHB=168 MHz, APB1=42 MHz (/4), APB2=84 MHz (/2)
-  *   Flash latency 5 wait states, regulator scale 1 (no overdrive on F407).
+  *   PLLM=8    -> PLL input  1 MHz
+  *   PLLN=192  -> VCO       192 MHz
+  *   PLLP=8    -> SYSCLK    24 MHz
+  *   PLLQ=4    -> (unused; USB/SDIO not used here, PLL48 = 48 MHz)
+  *   AHB=24 MHz, APB1=24 MHz (/1), APB2=24 MHz (/1)
+  *   Flash latency 0 wait states, regulator scale 1.
+  *
+  * 24 MHz is deliberately low: the ST7735S panel became reliable only with
+  * slow, resynced SPI, so the whole MCU runs at the same slow pace. PLLN=192 /
+  * PLLP=8 keeps the VCO at 192 MHz, within the F407's 100-432 MHz VCO range
+  * (a 48 MHz VCO would not lock reliably).
   */
 
 #include "board.h"
@@ -29,9 +34,9 @@ void SystemClock_Config(void)
     RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_ON;
     RCC_OscInitStruct.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
     RCC_OscInitStruct.PLL.PLLM       = 8U;
-    RCC_OscInitStruct.PLL.PLLN       = 336U;
-    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV2;
-    RCC_OscInitStruct.PLL.PLLQ       = 7U;
+    RCC_OscInitStruct.PLL.PLLN       = 192U;
+    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV8;
+    RCC_OscInitStruct.PLL.PLLQ       = 4U;
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
     {
         Error_Handler();
@@ -41,9 +46,9 @@ void SystemClock_Config(void)
                                      | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
     RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
     RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
-    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
-    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
-    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
     {
         Error_Handler();
     }
