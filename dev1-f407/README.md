@@ -76,7 +76,7 @@ Schematic / board manual: `board_sch.pdf`.
 | `app/blink_hello`  | Cycles LED1/2/3 every 250 ms @ 168 MHz + UART banner/tick prints + internal ADC (VREFINT/temp/VBAT) sampling (GCC) |
 | `app/dhry_168m`    | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_168m`| CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang **or** starm-clang, `-Ofast -ffp-contract=fast -funroll-all-loops` (AC6 `-Omax` reaches 541.15 it/s) |
-| `app/coremark_sram` | CoreMark 1.0.1 from **SRAM2** — kernel in 0x2001C000, copy-in'd at boot (works: 211.43 iters/s SysTick) |
+| `app/coremark_sram` | CoreMark 1.0.1 from **SRAM1** — kernel in 0x20000000 (the 112 KB main SRAM; SRAM2's 16 KB is too small for `-Omax`), copy-in'd at boot (works: 330.72 iters/s SysTick) |
 | `app/ram_test` | Minimal SRAM2/CCM execution probes (trivial function proves which regions run code) |
 | `app/eth_http_server` | HTTP server over Ethernet (DP83848). ⚠️ **BROKEN** — see the Ethernet note above. |
 | `app/eeprom_test`  | AT24C02 EEPROM (I2C1: PB8=SCL, PB9=SDA) erase/program/read test |
@@ -88,7 +88,8 @@ Measured with `app/ram_test` (and `coremark_sram`):
 
 | Memory | Code execution | Note |
 | ------ | -------------- | ---- |
-| **SRAM2** (0x2001C000) | **Works** | `coremark_sram` runs and validates (211.43 iters/s SysTick, crc 0x988c) |
+| **SRAM1** (0x20000000) | **Works** | `coremark_sram` runs and validates with the kernel here (330.72 iters/s SysTick, crc 0x988c) — faster than SRAM2 for instruction fetch |
+| **SRAM2** (0x2001C000) | **Works** | Code executes (verified by `ram_test`); 16 KB too small for the `-Omax` kernel, so the benchmark uses SRAM1 |
 | **CCM** (0x10000000) | **Does not work** | Hard fault (BFSR.IBUSERR) on the first CCM instruction fetch |
 
 **Root cause (confirmed):** CCM cannot execute code on these parts. `ccm_probe`

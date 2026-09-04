@@ -1,6 +1,6 @@
-# CoreMark 1.0.1 benchmark running the timed kernel from SRAM2 (0x2001C000)
-# on the dev1-f407 (custom STM32F407VET6) @ 168 MHz.
-# The benchmark core (core_*.c) is linked into SRAM2 via a project linker
+# CoreMark 1.0.1 benchmark running the timed kernel from SRAM1 (0x20000000,
+# the 112 KB main SRAM) on the dev1-f407 (custom STM32F407VET6) @ 168 MHz.
+# The benchmark core (core_*.c) is linked into SRAM1 via a project linker
 # script and copy-in'd from flash at startup; harness/HAL/printf stay in flash.
 # Timed with SysTick (HAL_GetTick, 1 kHz) — see core_portme.c for the DWT
 # wrap reason.
