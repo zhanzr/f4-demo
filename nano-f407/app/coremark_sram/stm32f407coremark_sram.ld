@@ -2,13 +2,17 @@
  *
  * Memory split (STM32F407VET6):
  *   FLASH  : 512 KB @ 0x08000000   - vector table, newlib/HAL/harness code
- *   SRAM1  : 112 KB @ 0x20000000   - .data/.bss, heap, stack (as the normal board)
- *   SRAM2  : 16 KB  @ 0x2001C000   - .ram_code: the timed CoreMark core runs here
+ *   SRAM1  : 112 KB @ 0x20000000   - .ram_code: the timed CoreMark core (base),
+ *                                    then .data/.bss, .sram_dma, heap, stack
+ *   SRAM2  : 16 KB  @ 0x2001C000   - unused (kept for reference / DMA scratch)
  *
- * The benchmark kernel (core_*.c) is placed in SRAM2 (via .ram_code, which is
- * copy-in'd from flash at startup by Reset_Handler) so the timed loops execute
- * with zero flash wait-state / ART influence, isolating pure CPU+SRAM throughput.
- * The harness (main, core_portme, HAL, printf) stays in FLASH.
+ * The benchmark kernel (core_*.c) is placed in SRAM1 (via .ram_code at the SRAM1
+ * base, copy-in'd from flash at startup by Reset_Handler) so the timed loops
+ * execute from SRAM. Empirically (SysTick-timed, identical -Ofast code), SRAM1 at
+ * 0x20000000 runs the kernel ~1.53x faster than SRAM2 at 0x2001C000
+ * (304 vs 198 it/s), so SRAM1 is the correct home. FLASH via the ART I-cache is
+ * fastest of all (428 it/s) -- the harness (main, core_portme, HAL, printf)
+ * stays in FLASH as in the normal board.
  *
  * Symbols consumed by startup_stm32f407xx.s: _estack, _sidata, _sdata, _edata,
  *   _sbss, _ebss (existing) plus _sram_code/_eram_code/_sram_code_idata for the
@@ -37,10 +41,12 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  /* The timed CoreMark kernel: code + const data relocated to SRAM2 and
+  /* The timed CoreMark kernel: code + const data relocated to SRAM1 and
    * copy-in'd from flash at startup (symbols drive the startup .ram_code loop).
-   * Placed BEFORE .text so the file-qualified globs win GNU ld's first-match
-   * and claim the core kernel regardless of compiler (gcc, armclang, starm-clang).
+   * Placed at the SRAM1 base (before .text) so the file-qualified globs win GNU
+   * ld's first-match and claim the core kernel regardless of compiler (gcc,
+   * armclang, starm-clang). SRAM1 is notably faster for instruction fetch than
+   * SRAM2 on F407 (~1.53x), which is why the kernel lives here and not in SRAM2.
    * Each core object may be named core_*.c.obj (gcc) or core_*.o (armclang). */
   .ram_code :
   {
@@ -52,7 +58,7 @@ SECTIONS
     *core_main.c.obj(.text* .rodata*)     *core_main.o(.text* .rodata*)
     . = ALIGN(4);
     _eram_code = .;
-  } >SRAM2 AT> FLASH
+  } >SRAM1 AT> FLASH
   _sram_code_idata = LOADADDR(.ram_code);
 
   .text :

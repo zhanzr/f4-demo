@@ -17,7 +17,7 @@ int main(void)
 
     while (1)
     {
-        printf("\r\n--- CoreMark run on STM32F407VET6 @ %lu Hz (core in SRAM2 0x2001C000) ---\r\n",
+        printf("\r\n--- CoreMark run on STM32F407VET6 @ %lu Hz (core in SRAM1 0x20000000) ---\r\n",
                (unsigned long)cpu_hz);
         coremark_main();
         printf("--- CoreMark complete. %lu Hz, %s ---\r\n",

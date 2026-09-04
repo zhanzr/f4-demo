@@ -1,27 +1,63 @@
-# CoreMark 1.0.1 from SRAM2 @ 168 MHz — nano-f407 (STM32F407VET6)
+# CoreMark 1.0.1 from SRAM1 @ 168 MHz — nano-f407 (STM32F407VET6)
 
 Runs CoreMark 1.0.1 (**10,000 iterations**) with the timed benchmark kernel
-(`core_*.c`) linked into **SRAM2** (0x2001C000, 16 KB) and copy-in'd from
-flash at startup; the harness/HAL/printf stay in flash. Goal: isolate pure
-CPU+SRAM throughput from flash wait-state / ART influence. Timed with the HAL
-SysTick 1 kHz tick (`HAL_GetTick()`, see `src/core_portme.c`).
+(`core_*.c`) linked into **SRAM1** (0x20000000, the 112 KB main SRAM) and
+copy-in'd from flash at startup; the harness/HAL/printf stay in flash. Goal:
+isolate pure CPU+SRAM throughput from flash wait-state / ART influence. Timed
+with the HAL SysTick 1 kHz tick (`HAL_GetTick()`, see `src/core_portme.c`).
 
-## Three-toolchain SRAM2 test status (measured on hardware, nano-f407 — healthy chip)
+## Why SRAM1 (not SRAM2) and a note on flash vs SRAM
 
-SRAM2 execution works on all three toolchains. The kernel is reliably placed
-in SRAM2 via `stm32f407coremark_sram.ld`, which places `.ram_code` **before**
-`.text` (so GNU ld's first-match hands the core kernel to SRAM2 for every
-compiler) and matches each core object by both `.c.obj` (gcc / starm-clang)
-and `.o` (armclang) names.
+Measured on hardware with byte-identical `-Ofast -funroll-loops` kernel code
+and identical SysTick timing, running the same kernel from different memories
+gives very different throughput:
 
-| Toolchain | Iterations/Sec | Time (s) | CRC (crcfinal) |
-| --------- | -------------- | -------- | -------------- |
-| GCC 15.3.1 (`-Ofast`) | **198.19** | 50.46 | 0x988c — validated |
-| ARMCLANG (Keil AC6, clang 20) | **224.95** | 44.46 | 0x988c — validated |
-| ST Arm clang (LLVM 21.1.1, `-Ofast`) | **188.75** | 52.98 | 0x988c — validated |
+| Execution memory | GCC 15.3.1 it/s | Time (s) |
+| ---------------- | --------------- | -------- |
+| FLASH (ART I-cache) | 427.75 | 23.38 |
+| **SRAM1 @ 0x20000000** | **303.83** | 32.91 |
+| SRAM2 @ 0x2001C000 | 198.19 | 50.46 |
 
-All three validate with `crcfinal = 0x988c` (`Correct operation validated`) and
-their reported runtimes match measured wall-clock time.
+Two separate effects:
+
+1. **SRAM2 is genuinely slow for instruction fetch on F407.** SRAM1
+   (0x20000000) executes the kernel about **1.53× faster** than SRAM2
+   (0x2001C000) on every toolchain (gcc 304 vs 198 it/s). This project
+   originally used SRAM2; it was repointed to SRAM1 because that is the faster
+   home for the timed core.
+
+2. **FLASH-with-ART is fastest of all** (~1.4× faster than SRAM1). STM32F4
+   flash is fetched over the dedicated ICode bus through the ART accelerator
+   (128-bit prefetch + instruction cache), so tight loops execute at near
+   1 instr/cycle with no bus arbitration. SRAM has no such accelerator and is
+   fetched over the shared system bus, so it is slower than flash — the
+   opposite of the usual "RAM is faster" intuition. This is the irreducible
+   remainder (427 vs 304 it/s) that SRAM cannot recover on this part.
+
+The disassembly of `core_bench_list` is byte-for-byte identical between the
+flash and SRAM builds, confirming the difference is purely the fetch bus /
+ART, not the compiler output or a timing artifact (all results match
+wall-clock time).
+
+## Three-toolchain SRAM1 results (measured on hardware, nano-f407 — healthy chip)
+
+SRAM1 execution works on all three toolchains. The kernel is reliably placed
+at the SRAM1 base via `stm32f407coremark_sram.ld`, which places `.ram_code`
+**before** `.text` (so GNU ld's first-match hands the core kernel to SRAM1 for
+every compiler) and matches each core object by both `.c.obj` (gcc /
+starm-clang) and `.o` (armclang) names. Stack stays at the top of SRAM1
+(0x2001C000), with `.data`/`.bss`/heap laid out after the ~13 KB kernel.
+
+| Toolchain | Iterations/Sec (SRAM1) | Time (s) | CRC (crcfinal) |
+| --------- | ---------------------- | -------- | -------------- |
+| GCC 15.3.1 (`-Ofast`) | **303.83** | 32.91 | 0x988c — validated |
+| ARMCLANG (Keil AC6, clang 20) | **339.33** | 29.47 | 0x988c — validated |
+| ST Arm clang (LLVM 21.1.1, `-Ofast`) | **291.22** | 34.34 | 0x988c — validated |
+
+For comparison, the same builds in SRAM2 gave 198.19 / 224.95 / 188.75 it/s —
+moving to SRAM1 raised every toolchain by ~1.5×. All three validate with
+`crcfinal = 0x988c` (`Correct operation validated`) and their reported runtimes
+match measured wall-clock time.
 
 ### Timing method: SysTick, not DWT/CYCCNT
 
@@ -35,7 +71,9 @@ that the timing leaf functions are compiled correctly, so this is a clang
 optimizer interaction with the DWT-timing control flow in `core_main.c`, not
 a board/clock/HAL fault. Switching `core_portme.c` to the HAL SysTick
 1 kHz tick (a call into the HAL) yields consistent, self-validating runs on
-all three toolchains, which is why the project now times with SysTick.
+all three toolchains (as well as the earlier — and misleadingly fast — DWT
+numbers for GCC/armclang, which under-counted wall time for SRAM code), which
+is why the project now times with SysTick.
 
 > CCM (0x10000000) cannot run code on this part — see `ccm_probe` and the
 > board README "RAM / CCM code-execution test status".

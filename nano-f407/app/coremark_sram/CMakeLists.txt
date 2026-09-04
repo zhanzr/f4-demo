@@ -1,8 +1,10 @@
-# CoreMark 1.0.1 benchmark running the timed kernel from SRAM2 (0x2001C000)
+# CoreMark 1.0.1 benchmark running the timed kernel from SRAM1 (0x20000000)
 # on the nano-f407 (STM32F407VET6) @ 168 MHz.
-# The benchmark core (core_*.c) is linked into SRAM2 via a project linker
+# The benchmark core (core_*.c) is linked into SRAM1 via a project linker
 # script and copy-in'd from flash at startup; harness/HAL/printf stay in flash.
-# Timed with the DWT cycle counter (no SysTick ISR).
+# Timed with SysTick (HAL_GetTick, 1 kHz).
+# SRAM1 at 0x20000000 executes the kernel ~1.53x faster than SRAM2 (0x2001C000);
+# flash via the ART I-cache is fastest of all -- see README.
 #
 # Pico-style workflow (gcc default; armclang / starm-clang for alternate CCs):
 #   mkdir -p build && cd build
