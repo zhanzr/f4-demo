@@ -27,7 +27,3 @@ Thumbs.db
 # WiFi credentials (never commit)
 **/wifi_config.h
 *_log*.txt
-
-# Not-working / diagnosed projects (kept local only, see their own README)
-nano-f407/app/pa1_test_TODO/
-nano-f407/app/ws2812b_TODO/

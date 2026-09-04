@@ -22,6 +22,18 @@ extern char _estack[];
 extern "C" {
 #endif
 
+/* ARM AEABI thread-pointer read. starm-clang's newlib implements errno as a
+ * TLS variable (errno -> __tls), read through __aeabi_read_tp(). On an
+ * unthreaded bare-metal target there is no thread pointer, so return a stable
+ * static-address "thread" that __tls_offset/errno can index off of. GNU
+ * newlib never references it (its errno is *__errno()), so GCC links find the
+ * symbol unused and --gc-sections drops it. */
+void *__aeabi_read_tp(void)
+{
+    static char tp_slot;
+    return &tp_slot;
+}
+
 void _init(void)
 {
 }

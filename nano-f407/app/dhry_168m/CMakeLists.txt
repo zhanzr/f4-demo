@@ -1,12 +1,13 @@
 # Dhrystone 2.1 benchmark for the STM32F407VET6 "nano-f407" board @ 168 MHz.
-# Compiled with Keil Arm Compiler 6 (armclang) at the most aggressive
-# optimization (-Ofast -ffp-contract=fast -funroll-loops) + hard-float;
-# linked with GNU ld/newlib via the existing linker script.
+# Default compiler is GNU arm-none-eabi-gcc at the most aggressive optimization
+# (-Ofast -ffp-contract=fast -funroll-loops) + hard-float; Keil Arm Compiler 6
+# (armclang) is available as an option. Linked with GNU ld/newlib via the
+# existing linker script.
 #
 # Pico-style workflow:
 #   mkdir -p build && cd build
-#   cmake -G Ninja ..                    # defaults to armclang (Keil AC6)
-#   cmake -G Ninja -DSTM32_TOOLCHAIN=gcc -DSTM32_LTO=ON ..   # GNU + LTO
+#   cmake -G Ninja ..                    # defaults to gcc (arm-none-eabi)
+#   cmake -G Ninja -DSTM32_TOOLCHAIN=armclang ..   # Keil AC6 (option); -DSTM32_LTO=ON enables gcc LTO
 #   ninja           # builds .elf / .hex / .bin
 #   ninja flash     # programs the board (probe-rs, ULINK2 CMSIS-DAP / SWD)
 #   ninja swv       # stream the SWV printf output (Ctrl-C to stop)
@@ -19,11 +20,12 @@ if(POLICY CMP0123)
     cmake_policy(SET CMP0123 NEW)
 endif()
 
-# Toolchain selection. armclang (default) = Keil Arm Compiler 6 C + GNU as/ld;
-# gcc = GNU arm-none-eabi end-to-end. CMAKE_TOOLCHAIN_FILE is cached, so use a
-# separate build dir per toolchain (build/ for armclang, build-gcc/ for gcc).
-set(STM32_TOOLCHAIN "armclang" CACHE STRING "C compiler: armclang (Keil AC6) or gcc")
-set_property(CACHE STM32_TOOLCHAIN PROPERTY STRINGS armclang gcc)
+# Toolchain selection. gcc (default) = GNU arm-none-eabi end-to-end;
+# armclang = Keil Arm Compiler 6 C + GNU as/ld. CMAKE_TOOLCHAIN_FILE is cached,
+# so use a separate build dir per toolchain (build/ for gcc, build-armclang/
+# for armclang).
+set(STM32_TOOLCHAIN "gcc" CACHE STRING "C compiler: gcc (arm-none-eabi, default) or armclang (Keil AC6)")
+set_property(CACHE STM32_TOOLCHAIN PROPERTY STRINGS gcc armclang)
 
 # Link-time optimization. GCC only: armclang -flto/-Omax emits LLVM bitcode
 # (.llvm.lto) that needs armlink + ARMCLIB and cannot be consumed by GNU ld.
@@ -48,6 +50,9 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+set(BENCH_OPT "-Ofast -ffp-contract=fast -funroll-loops" CACHE STRING
+    "Optimization flags for stm32f407_apply_board (e.g. -Omax for armclang)")
+
 add_executable(${PROJECT_NAME}.elf
     src/main.c
     src/utils.c
@@ -56,16 +61,7 @@ add_executable(${PROJECT_NAME}.elf
 )
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f407_board.cmake)
-stm32f407_apply_board(${PROJECT_NAME}.elf "-Ofast -ffp-contract=fast -funroll-loops")
+stm32f407_apply_board(${PROJECT_NAME}.elf "${BENCH_OPT}")
 
-# Generate .hex/.bin and copy them next to the sources (where the flasher looks).
-add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} -O ihex ${PROJECT_NAME}.elf ${PROJECT_NAME}.hex
-    COMMAND ${CMAKE_OBJCOPY} -O binary ${PROJECT_NAME}.elf ${PROJECT_NAME}.bin
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_NAME}.hex ${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.hex
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_NAME}.bin ${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.bin
-    COMMAND ${CMAKE_SIZE} ${PROJECT_NAME}.elf
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMENT "objcopy -> .hex/.bin, size")
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/flash-targets.cmake)

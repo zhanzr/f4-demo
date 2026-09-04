@@ -42,8 +42,25 @@ find_program(STM32_CUBE_PROG NAMES STM32_Programmer_CLI.exe
     HINTS "D:/Program Files/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin"
     DOC "STM32CubeProgrammer CLI")
 
-set(BIN_HEX "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.hex")
+# All build products (.elf/.hex/.bin/.map) live in the project `build/` folder
+# (git-ignored); nothing is copied next to the sources. The .hex/.bin are
+# generated here as ninja-visible OUTPUTs of the linked elf, and the flash
+# targets depend on the .hex so it is always (re)generated before flashing.
+set(BIN_ELF "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.elf")
+set(BIN_HEX "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.hex")
+set(BIN_BIN "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bin")
 set(OPENOCD_CFG "${CMAKE_CURRENT_LIST_DIR}/openocd_stm32f407ve.cfg")
+
+add_custom_command(OUTPUT ${BIN_HEX} ${BIN_BIN}
+    COMMAND ${CMAKE_OBJCOPY} -O ihex   "${BIN_ELF}" "${BIN_HEX}"
+    COMMAND ${CMAKE_OBJCOPY} -O binary "${BIN_ELF}" "${BIN_BIN}"
+    COMMAND ${CMAKE_SIZE} "${BIN_ELF}"
+    DEPENDS ${PROJECT_NAME}.elf
+    VERBATIM
+    COMMENT "objcopy -> .hex/.bin (in build/), size")
+
+# Part of the default `all` build, so plain `ninja` also emits .hex/.bin.
+add_custom_target(${PROJECT_NAME}_hex ALL DEPENDS ${BIN_HEX} ${BIN_BIN})
 
 # Build the probe-rs --probe argument. 'auto' omits it so probe-rs picks the
 # only connected probe (works for both ULINK2 and ST-Link V2).
@@ -60,7 +77,7 @@ if(PROBE_RS)
                     --chip STM32F407VE --protocol swd
                     --binary-format hex --verify --reset --non-interactive
                     --disable-progressbars "${BIN_HEX}"
-        DEPENDS ${PROJECT_NAME}.elf
+        DEPENDS ${BIN_HEX}
         COMMENT "Flashing ${PROJECT_NAME}.hex to STM32F407VET6 via probe-rs (SWD) ..."
         USES_TERMINAL)
 else()
@@ -74,7 +91,7 @@ if(OPENOCD)
         COMMAND "${OPENOCD}" -c "set OPENOCD_INTERFACE ${OPENOCD_INTERFACE}"
                     -f "${OPENOCD_CFG}"
                     -c "program ${BIN_HEX} verify reset exit"
-        DEPENDS ${PROJECT_NAME}.elf
+        DEPENDS ${BIN_HEX}
         COMMENT "Flashing ${PROJECT_NAME}.hex to STM32F407VET6 via OpenOCD (${OPENOCD_INTERFACE}, SWD) ..."
         USES_TERMINAL)
 else()
@@ -87,7 +104,7 @@ if(STM32_CUBE_PROG)
     add_custom_target(flash-cube
         COMMAND "${STM32_CUBE_PROG}" -c port=SWD mode=UR
                     -w "${BIN_HEX}" -v -rst
-        DEPENDS ${PROJECT_NAME}.elf
+        DEPENDS ${BIN_HEX}
         COMMENT "Flashing ${PROJECT_NAME}.hex to STM32F407VET6 via STM32CubeProgrammer CLI (ST-Link, SWD) ..."
         USES_TERMINAL)
 else()

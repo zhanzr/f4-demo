@@ -22,11 +22,28 @@ find_program(PROBE_RS NAMES probe-rs probe-rs.exe
     HINTS "$ENV{USERPROFILE}/.cargo/bin" "$ENV{CARGO_HOME}/bin"
     DOC "probe-rs binary")
 
-set(BIN_HEX "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.hex")
+# All build products (.elf/.hex/.bin/.map) live in the project `build/` folder
+# (git-ignored); nothing is copied next to the sources. The .hex/.bin are
+# generated here as ninja-visible OUTPUTs of the linked elf, and the flash
+# targets depend on the .hex so it is always (re)generated before flashing.
+set(BIN_ELF "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.elf")
+set(BIN_HEX "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.hex")
+set(BIN_BIN "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bin")
 set(OPENOCD_IF  "C:/msys64/mingw64/share/openocd/scripts/interface/cmsis-dap.cfg")
 set(OPENOCD_TGT "C:/msys64/mingw64/share/openocd/scripts/target/stm32f4x.cfg")
 # note: OpenOCD's "program" needs a forward-slash path (backslashes are escapes).
 string(REPLACE "\\" "/" BIN_HEX_OCD "${BIN_HEX}")
+
+add_custom_command(OUTPUT ${BIN_HEX} ${BIN_BIN}
+    COMMAND ${CMAKE_OBJCOPY} -O ihex   "${BIN_ELF}" "${BIN_HEX}"
+    COMMAND ${CMAKE_OBJCOPY} -O binary "${BIN_ELF}" "${BIN_BIN}"
+    COMMAND ${CMAKE_SIZE} "${BIN_ELF}"
+    DEPENDS ${PROJECT_NAME}.elf
+    VERBATIM
+    COMMENT "objcopy -> .hex/.bin (in build/), size")
+
+# Part of the default `all` build, so plain `ninja` also emits .hex/.bin.
+add_custom_target(${PROJECT_NAME}_hex ALL DEPENDS ${BIN_HEX} ${BIN_BIN})
 
 # --- OpenOCD (default) -------------------------------------------------------
 # Fastest + most reliable for the ULINK2 on this board.
@@ -35,7 +52,7 @@ if(OPENOCD)
         COMMAND "${OPENOCD}" -f "${OPENOCD_IF}" -f "${OPENOCD_TGT}"
                     -c "adapter speed 4000" -c "transport select swd"
                     -c "program ${BIN_HEX_OCD} verify reset exit"
-        DEPENDS ${PROJECT_NAME}.elf
+        DEPENDS ${BIN_HEX}
         COMMENT "Flashing ${PROJECT_NAME}.hex to STM32F429IGT6 via OpenOCD (ULINK2, SWD) ..."
         USES_TERMINAL)
 else()
@@ -50,7 +67,7 @@ if(PROBE_RS)
                     --chip STM32F429IG --protocol swd
                     --binary-format hex --verify --reset --non-interactive
                     --disable-progressbars "${BIN_HEX}"
-        DEPENDS ${PROJECT_NAME}.elf
+        DEPENDS ${BIN_HEX}
         COMMENT "Flashing ${PROJECT_NAME}.hex to STM32F429IGT6 via probe-rs (ULINK2, SWD) ..."
         USES_TERMINAL)
 else()
@@ -64,7 +81,7 @@ if(PYTHON)
     add_custom_target(flash-pyocd
         COMMAND "${PYTHON}" -u -m pyocd flash "${BIN_HEX}"
                     -t stm32f429xi -u "${ULINK2_UID}" --no-config
-        DEPENDS ${PROJECT_NAME}.elf
+        DEPENDS ${BIN_HEX}
         COMMENT "Flashing ${PROJECT_NAME}.hex to STM32F429IGT6 via pyOCD (ULINK2, SWD) ..."
         USES_TERMINAL)
 else()

@@ -22,8 +22,6 @@ extern "C" {
 #define HAL_PWR_MODULE_ENABLED
 #define HAL_RCC_MODULE_ENABLED
 #define HAL_UART_MODULE_ENABLED
-#define HAL_SPI_MODULE_ENABLED
-#define HAL_TIM_MODULE_ENABLED
 #define HAL_DMA_MODULE_ENABLED
 
 /* ########################## Oscillator Values ############################# */
@@ -88,14 +86,6 @@ void assert_failed(uint8_t *file, uint32_t line);
 #if defined(HAL_UART_MODULE_ENABLED)
   #include "stm32f4xx_hal_uart.h"
 #endif /* HAL_UART_MODULE_ENABLED */
-
-#if defined(HAL_SPI_MODULE_ENABLED)
-  #include "stm32f4xx_hal_spi.h"
-#endif /* HAL_SPI_MODULE_ENABLED */
-
-#if defined(HAL_TIM_MODULE_ENABLED)
-  #include "stm32f4xx_hal_tim.h"
-#endif /* HAL_TIM_MODULE_ENABLED */
 
 #ifdef __cplusplus
 }

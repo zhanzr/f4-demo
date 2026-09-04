@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build the STM32F407VET6 "nano-f407" st7735s_md144_128_128 project (ST7735S
-# 1.44" 128x128 TFT over hardware SPI2) with CMake + Ninja (Pico-style).
+# Build the STM32F407VET6 "nano-f407" blink_hello project (LED blink + ADC internal
+# channels) with CMake + Ninja (Pico-style).
 # Run with:  bash build.sh    (or ./build.sh on Linux)
 set -euo pipefail
 
