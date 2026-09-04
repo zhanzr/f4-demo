@@ -25,9 +25,9 @@ set(STM32F4_CMSIS_CORE ${STM32F4_HAL_ROOT}/CMSIS/Include)
 function(stm32f407_apply_board TGT OPT)
     separate_arguments(OPT_LIST NATIVE_COMMAND "${OPT}")
 
-    # GCC-only warning switches; keep clang (armclang) clean.
-    if(STM32_ARMCLANG)
-        set(_WARN_FLAGS -Wall)
+    # GCC-only warning switches; keep clang-based toolchains clean.
+    if(STM32_ARMCLANG OR STM32_STARM_CLANG)
+        set(_WARN_FLAGS -Wall -Wno-unused-command-line-argument)
     else()
         set(_WARN_FLAGS
             -Wall
@@ -86,28 +86,80 @@ function(stm32f407_apply_board TGT OPT)
         -ffunction-sections -fdata-sections ${_WARN_FLAGS}
     )
 
+    # starm-clang links with LLD by default; use -Xlinker for linker flags.
+    if(STM32_STARM_CLANG)
+        set(_STARM_SYSROOT "${STARM_ROOT}/lib/clang-runtimes/newlib")
+        set(_STARM_LIBDIR "${_STARM_SYSROOT}/arm-none-eabi/armv7m_hard_fpv4_sp_d16_exn_rtti_unaligned_size/lib")
+        set(_LDFLAGS "-nostartfiles")
+        set(_LDFLAGS "${_LDFLAGS} -Xlinker -T -Xlinker ${BOARD_DIR}/stm32f407vet6.ld")
+        set(_LDFLAGS "${_LDFLAGS} -Xlinker --gc-sections")
+        set(_LDFLAGS "${_LDFLAGS} -Xlinker -Map=${PROJECT_NAME}.map")
+        set(_LDFLAGS "${_LDFLAGS} -L${_STARM_LIBDIR}")
+        set(_LDFLAGS "${_LDFLAGS} -Xlinker --start-group")
+        set(_LDFLAGS "${_LDFLAGS} ${_STARM_LIBDIR}/libclang_rt.builtins.a -lc -lm")
+        set(_LDFLAGS "${_LDFLAGS} -Xlinker --end-group")
+    else()
+        set(_LDFLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 ${OPT}")
+        set(_LDFLAGS "${_LDFLAGS} -Wl,--gc-sections -nostartfiles")
+        set(_LDFLAGS "${_LDFLAGS} -Wl,-Map=${PROJECT_NAME}.map")
+        set(_LDFLAGS "${_LDFLAGS} -T ${BOARD_DIR}/stm32f407vet6.ld")
+        set(_LDFLAGS "${_LDFLAGS} -lc -lm")
+    endif()
+
     set_target_properties(${TGT} PROPERTIES
-        LINK_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 ${OPT} -Wl,--gc-sections -nostartfiles -Wl,-Map=${PROJECT_NAME}.map -T ${BOARD_DIR}/stm32f407vet6.ld -lc -lm"
+        LINK_FLAGS "${_LDFLAGS}"
     )
 
     # newlib/libgcc's thumb/v7e-m+fp/hard multilib objects are built with
-    # -fshort-enums and lack .note.GNU-stack, so a normal link spews ~60
-    # benign warnings. Silence them (the sizes match the ARM EABI defaults
-    # our objects use, so this is noise, not an ABI error):
-    set_property(TARGET ${TGT} APPEND_STRING PROPERTY
-        LINK_FLAGS " -Wl,--no-enum-size-warning -Wl,--no-wchar-size-warning -Wl,--no-warn-execstack")
+    # -fshort-enums and lack .note.GNU-stack, so a GNU ld link spews ~60
+    # benign warnings. Silence them (sizes match the ARM EABI defaults our
+    # objects use, so this is noise, not an ABI error). LLD (starm-clang)
+    # does not support these GNU-ld-only switches, so skip them there.
+    if(NOT STM32_STARM_CLANG)
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Wl,--no-enum-size-warning -Wl,--no-wchar-size-warning -Wl,--no-warn-execstack")
+    endif()
 
-    # Link-time optimization (GCC only). armclang -flto emits LLVM bitcode
-    # (.llvm.lto) that GNU ld cannot consume, so STM32_LTO is ignored there.
-    if(STM32_LTO AND NOT STM32_ARMCLANG)
+    # Link-time optimization (GCC and starm-clang).
+    # GCC: -flto via GNU ld's lto plugin.
+    # starm-clang: -flto=full via LLD's native LTO (bitcode consumed directly).
+    # Keil armclang: LTO impossible — emits LLVM bitcode that GNU ld cannot use.
+    if(STM32_LTO AND STM32_STARM_CLANG)
+        target_compile_options(${TGT} PRIVATE
+            -flto=full -ffat-lto-objects
+        )
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -flto=full")
+        # Aggressive LTO plugin opts (from ST's OmaxLTO.cfg).
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-extra-LTO-loop-unroll=true")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-inline-threshold=500")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-unroll-threshold=450")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-unroll-partial-threshold=450")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-unroll-max-iteration-count-to-analyze=20")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-lsr-complexity-limit=1073741823")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-force-attribute=main:norecurse")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-enable-dfa-jump-thread")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-enable-loop-flatten")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-enable-unroll-and-jam")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-enable-inline-memcpy-ld-st")
+        set_property(TARGET ${TGT} APPEND_STRING PROPERTY
+            LINK_FLAGS " -Xlinker -plugin-opt=-enable-loop-versioning-licm")
+        set_source_files_properties(${BOARD_DIR}/syscalls.c PROPERTIES
+            COMPILE_OPTIONS "-fno-lto")
+    elseif(STM32_LTO AND NOT STM32_ARMCLANG AND NOT STM32_STARM_CLANG)
         target_compile_options(${TGT} PRIVATE -flto)
         set_property(TARGET ${TGT} APPEND_STRING PROPERTY LINK_FLAGS " -flto")
-        # GCC LTO loses the newlib syscall-stub definitions (_fstat/_isatty/
-        # _kill/_getpid) that live in syscalls.c: the plugin fails to resolve
-        # the THM_CALL relocations from libc.a against the LTO IR, leaving
-        # "undefined reference / Unknown destination type (ARM/Thumb)".
-        # syscalls.c is a tiny retarget layer (not benchmark code), so compile
-        # it without LTO.
         set_source_files_properties(${BOARD_DIR}/syscalls.c PROPERTIES
             COMPILE_OPTIONS "-fno-lto")
     endif()

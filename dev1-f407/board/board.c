@@ -9,6 +9,10 @@
   *   PLLQ=7   -> 48 MHz    (USB/SDIO, not used here)
   *   AHB=168 MHz, APB1=42 MHz (/4), APB2=84 MHz (/2)
   *   Flash latency 5 wait states, regulator scale 1 (no overdrive on F407).
+  *
+  * SystemClock_Config() is declared weak so an individual project can bring
+  * in its own clock setup (e.g. blink_hello_48m runs at 48 MHz) without
+  * affecting the default 168 MHz used by every other project.
   */
 
 #include "board.h"
@@ -16,7 +20,7 @@
 #include "swv_printf.h"
 
 /* ------------------------------------------------------------------------ */
-void SystemClock_Config(void)
+__attribute__((weak)) void SystemClock_Config(void)
 {
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
     RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};

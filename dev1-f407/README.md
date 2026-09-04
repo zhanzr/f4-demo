@@ -46,11 +46,13 @@ Schematic / board manual: `board_sch.pdf`.
 | `app/eeprom_test`  | AT24C02 EEPROM (I2C1: PB8=SCL, PB9=SDA) erase/program/read test |
 | `app/spi_flash_test` | W25Q64 SPI flash (SPI2: PE3=CS, PC2=MISO, PB10=SCK, PC3=MOSI) erase/program/read test |
 
-`blink` is built with arm-none-eabi-gcc. The two benchmarks build with either
-**arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)** — selected with
-`-DSTM32_TOOLCHAIN=gcc|armclang` at configure time — for the C code (GNU as
-for the startup file, GNU ld + newlib for linking) at the most aggressive
-optimization level. `-DSTM32_LTO=ON` additionally enables GCC LTO.
+`blink` is built with arm-none-eabi-gcc. The two benchmarks build with any of
+three toolchains — **arm-none-eabi-gcc**, **Keil Arm Compiler 6 (armclang)**,
+or **ST's Arm Clang (starm-clang)** — selected with
+`-DSTM32_TOOLCHAIN=gcc|armclang|starm-clang` at configure time for the C code
+(GNU as for the startup file; GNU ld+newlib or LLD for linking) at the most
+aggressive optimization level. `-DSTM32_LTO=ON` additionally enables LTO (gcc
+via the GNU plugin, or starm-clang via LLD's native LLVM LTO).
 
 All projects share the board support in `board/` (168 MHz clock from the 25 MHz
 HSE, LED GPIO, UART printf, newlib stubs, ST HAL wiring) and the CMake
@@ -163,14 +165,20 @@ Results @ 168 MHz (same board, same 25 MHz HSE clock tree). Normal toolchain
 comparison — **no LTO** (LTO invalidates Dhrystone; see
 `app/dhry_168m/LTO_on_dhrystone.md`):
 
-| Benchmark      | GCC 15.3.1            | armclang 6.24.0       |
-| -------------- | --------------------- | --------------------- |
-| Dhrystone 2.1  | 351,370 Dhrystones/s  | 393,391 Dhrystones/s  |
-| Dhrystone      | 1.19 DMIPS/MHz        | 1.33 DMIPS/MHz        |
-| CoreMark 1.0.1 | 427.7 iterations/s    | 451.0 iterations/s    |
+| Benchmark      | GCC 15.3.1            | armclang 6.24.0       | starm-clang 21.1.1    |
+| -------------- | --------------------- | --------------------- | --------------------- |
+| Dhrystone 2.1  | 351,370 Dhrystones/s  | 393,314 Dhrystones/s  | 398,963 Dhrystones/s  |
+| Dhrystone      | 1.19 DMIPS/MHz        | 1.33 DMIPS/MHz        | 1.35 DMIPS/MHz        |
+| CoreMark 1.0.1 | 427.7 iterations/s    | 451.0 iterations/s    | 401.4 iterations/s    |
 
-All armclang and CoreMark runs validate (Dhrystone final values match;
-CoreMark `Correct operation validated`, crcfinal `0x988c`).
+All runs validate (Dhrystone final values match; CoreMark `Correct operation
+validated`, crcfinal `0x988c`). These match the nano-f407 board to within
+normal board-to-board variance (~0.01 % on CoreMark; ~1 % on Dhrystone,
+attributable to the different HSE crystal accuracy and silicon).
+
+Notable: the toolchains rank differently per benchmark. On **Dhrystone** the
+ST/LLVM line wins (starm-clang 398,963 > armclang 393,314 > GCC 351,370), while
+on **CoreMark** armclang leads (451.0 > GCC 427.7 > starm-clang 401.4).
 
 ### Recommendation: do not adopt Arm Compiler 6
 

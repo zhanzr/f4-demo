@@ -21,21 +21,24 @@ if(POLICY CMP0123)
 endif()
 
 # Toolchain selection. gcc (default) = GNU arm-none-eabi end-to-end;
-# armclang = Keil Arm Compiler 6 C + GNU as/ld. CMAKE_TOOLCHAIN_FILE is cached,
-# so use a separate build dir per toolchain (build/ for gcc, build-armclang/
-# for armclang).
-set(STM32_TOOLCHAIN "gcc" CACHE STRING "C compiler: gcc (arm-none-eabi, default) or armclang (Keil AC6)")
-set_property(CACHE STM32_TOOLCHAIN PROPERTY STRINGS gcc armclang)
+# armclang = Keil Arm Compiler 6 C + GNU as/ld;
+# starm-clang = ST LLVM 21 C + LLD (supports full LLVM LTO).
+# CMAKE_TOOLCHAIN_FILE is cached, so use a separate build dir per toolchain
+# (build/ for gcc, build-armclang/ for armclang, build-starm-clang/ for starm-clang).
+set(STM32_TOOLCHAIN "gcc" CACHE STRING "C compiler: gcc (default), armclang (Keil AC6), or starm-clang (ST LLVM)")
+set_property(CACHE STM32_TOOLCHAIN PROPERTY STRINGS gcc armclang starm-clang)
 
-# Link-time optimization. GCC only: armclang -flto/-Omax emits LLVM bitcode
-# (.llvm.lto) that needs armlink + ARMCLIB and cannot be consumed by GNU ld.
-option(STM32_LTO "Enable -flto with the GCC toolchain" OFF)
+# Link-time optimization. GCC: -flto; starm-clang: -flto=full via LLD.
+# armclang (Keil): LTO impossible — emits LLVM bitcode that GNU ld cannot use.
+option(STM32_LTO "Enable LTO (gcc or starm-clang only)" OFF)
 
 if(NOT CMAKE_TOOLCHAIN_FILE)
     if(STM32_TOOLCHAIN STREQUAL "gcc")
         set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/arm-none-eabi-toolchain.cmake")
-    else()
+    elseif(STM32_TOOLCHAIN STREQUAL "armclang")
         set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/armclang-keil-toolchain.cmake")
+    else()
+        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/starm-clang-toolchain.cmake")
     endif()
 endif()
 
@@ -50,6 +53,9 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+set(BENCH_OPT "-Ofast -ffp-contract=fast -funroll-loops" CACHE STRING
+    "Optimization flags for stm32f407_apply_board (e.g. -Omax for armclang)")
+
 add_executable(${PROJECT_NAME}.elf
     src/main.c
     src/utils.c
@@ -58,7 +64,7 @@ add_executable(${PROJECT_NAME}.elf
 )
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f407_board.cmake)
-stm32f407_apply_board(${PROJECT_NAME}.elf "-Ofast -ffp-contract=fast -funroll-loops")
+stm32f407_apply_board(${PROJECT_NAME}.elf "${BENCH_OPT}")
 
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/flash-targets.cmake)
