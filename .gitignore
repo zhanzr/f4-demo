@@ -1,6 +1,7 @@
 # Build artifacts
 build/
 _build/
+build-*/
 
 # Binaries / objects
 *.elf

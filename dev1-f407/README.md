@@ -77,7 +77,6 @@ Schematic / board manual: `board_sch.pdf`.
 | `app/dhry_168m`    | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_168m`| CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_sram` | CoreMark 1.0.1 from **SRAM2** — kernel in 0x2001C000, copy-in'd at boot (works: 401.75 iters/s) |
-| `app/coremark_ccm` | CoreMark 1.0.1 from **CCM** — kernel in 0x10000000 (**CCM code does not work here** — see below) |
 | `app/ram_test` | Minimal SRAM2/CCM execution probes (trivial function proves which regions run code) |
 | `app/eth_http_server` | HTTP server over Ethernet (DP83848). ⚠️ **BROKEN** — see the Ethernet note above. |
 | `app/eeprom_test`  | AT24C02 EEPROM (I2C1: PB8=SCL, PB9=SDA) erase/program/read test |
@@ -85,18 +84,21 @@ Schematic / board manual: `board_sch.pdf`.
 
 ### RAM / CCM code-execution test status
 
-Measured with `app/ram_test` (and `coremark_sram` / `coremark_ccm`):
+Measured with `app/ram_test` (and `coremark_sram`):
 
 | Memory | Code execution | Note |
 | ------ | -------------- | ---- |
 | **SRAM2** (0x2001C000) | **Works** | `coremark_sram` runs and validates (401.75 iters/s, crc 0x988c) |
 | **CCM** (0x10000000) | **Does not work** | Hard fault (BFSR.IBUSERR) on the first CCM instruction fetch |
 
-CCM data access works and the MPU is disabled, so this is recorded as an
-observed test result on this board — **CCM code does not work here** — not a
-proven root cause. It is intentionally not generalized to a claim about all
-STM32F407 parts (see `nano-f407`, which is a healthy board, for a
-cross-check).
+**Root cause (confirmed):** CCM cannot execute code on these parts. `ccm_probe`
+(see `nano-f407`) shows the CPU reads/writes CCM **data** fine and the correct
+code is resident at the fetch address, but the **instruction fetch** from
+0x10000000 always bus-faults. This matches the STM32F4 architecture: CCM RAM is
+connected only to the Cortex-M4 **D-bus (data bus)**, so the instruction bus
+never reaches it — CCM is a **data-only** region on these parts. Code must run
+from flash or SRAM1/SRAM2 (system bus). The same fault reproduces on the
+healthy `nano-f407`, so it is a chip-level trait, **not** a board defect.
 
 `blink` is built with arm-none-eabi-gcc. The two benchmarks build with any of
 three toolchains — **arm-none-eabi-gcc**, **Keil Arm Compiler 6 (armclang)**,

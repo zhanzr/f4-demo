@@ -26,7 +26,6 @@ the ST-Link's **virtual COM port (VCP)** is the console.
 | `app/dhry_168m`      | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_168m`  | CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_sram`  | CoreMark with the timed kernel linked into **SRAM2** (0x2001C000) and copy-in'd at startup; CYCCNT timing |
-| `app/coremark_ccm`   | CoreMark with the timed kernel linked into **CCM** (0x10000000); CYCCNT timing |
 | `app/ram_test`       | Minimal RAM-execution probe: `ccm_function`/`ram_hello` in SRAM2 (or CCM) |
 | `app/ccm_probe`      | Focused CCM instruction-fetch isolation (data vs. code-bytes vs. fetch) |
 

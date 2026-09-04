@@ -37,12 +37,30 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
+  /* The timed CoreMark kernel: code + const data relocated to SRAM2 and
+   * copy-in'd from flash at startup (symbols drive the startup .ram_code loop).
+   * Placed BEFORE .text so the file-qualified globs win GNU ld's first-match
+   * and claim the core kernel regardless of compiler (gcc, armclang, starm-clang).
+   * Each core object may be named core_*.c.obj (gcc) or core_*.o (armclang). */
+  .ram_code :
+  {
+    _sram_code = .;
+    *core_list_join.c.obj(.text* .rodata*) *core_list_join.o(.text* .rodata*)
+    *core_matrix.c.obj(.text* .rodata*)   *core_matrix.o(.text* .rodata*)
+    *core_state.c.obj(.text* .rodata*)    *core_state.o(.text* .rodata*)
+    *core_util.c.obj(.text* .rodata*)     *core_util.o(.text* .rodata*)
+    *core_main.c.obj(.text* .rodata*)     *core_main.o(.text* .rodata*)
+    . = ALIGN(4);
+    _eram_code = .;
+  } >SRAM2 AT> FLASH
+  _sram_code_idata = LOADADDR(.ram_code);
+
   .text :
   {
     . = ALIGN(4);
     *(.text)
     *(.text.Reset_Handler)
-    EXCLUDE_FILE(*core_list_join.c.obj *core_matrix.c.obj *core_state.c.obj *core_util.c.obj *core_main.c.obj)
+    EXCLUDE_FILE(*core_list_join.c.obj *core_list_join.o *core_matrix.c.obj *core_matrix.o *core_state.c.obj *core_state.o *core_util.c.obj *core_util.o *core_main.c.obj *core_main.o)
       *(.text*)
     *(.glue_7)
     *(.glue_7t)
@@ -58,9 +76,9 @@ SECTIONS
   .rodata :
   {
     . = ALIGN(4);
-    EXCLUDE_FILE(*core_list_join.c.obj *core_matrix.c.obj *core_state.c.obj *core_util.c.obj *core_main.c.obj)
+    EXCLUDE_FILE(*core_list_join.c.obj *core_list_join.o *core_matrix.c.obj *core_matrix.o *core_state.c.obj *core_state.o *core_util.c.obj *core_util.o *core_main.c.obj *core_main.o)
       *(.rodata)
-    EXCLUDE_FILE(*core_list_join.c.obj *core_matrix.c.obj *core_state.c.obj *core_util.c.obj *core_main.c.obj)
+    EXCLUDE_FILE(*core_list_join.c.obj *core_list_join.o *core_matrix.c.obj *core_matrix.o *core_state.c.obj *core_state.o *core_util.c.obj *core_util.o *core_main.c.obj *core_main.o)
       *(.rodata*)
     . = ALIGN(4);
   } >FLASH
@@ -144,21 +162,6 @@ SECTIONS
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
   } >SRAM1
-
-  /* The timed CoreMark kernel: code + const data relocated to SRAM2 and
-   * copy-in'd from flash at startup (symbols drive the startup .ram_code loop). */
-  .ram_code :
-  {
-    _sram_code = .;
-    *core_list_join.c.obj(.text* .rodata*)
-    *core_matrix.c.obj(.text* .rodata*)
-    *core_state.c.obj(.text* .rodata*)
-    *core_util.c.obj(.text* .rodata*)
-    *core_main.c.obj(.text* .rodata*)
-    . = ALIGN(4);
-    _eram_code = .;
-  } >SRAM2 AT> FLASH
-  _sram_code_idata = LOADADDR(.ram_code);
 
   /* Stabs debugging sections. */
   .stab          0 : { *(.stab) }
