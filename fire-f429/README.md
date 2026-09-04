@@ -40,10 +40,14 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
 - `bare/blink_hello` — LED blink + ADC internal-channel demo (LEDs blink one
   by one; prints the 180 MHz clock and VREFINT / temperature / VBAT over USART1).
 - `bare/dhry_180m` — Dhrystone 2.1, 2,000,000 runs (GCC **or** armclang).
-  Measured GCC: **391,198 Dhrystones/s, 1.237 DMIPS/MHz**. See its README.
+  Measured GCC: **391,236 Dhrystones/s, 1.237 DMIPS/MHz**; armclang
+  **445,434 / 1.408**. See its README.
 - `bare/coremark_180m` — CoreMark 1.0.1, 10,000 iterations (GCC **or**
-  armclang). Measured GCC: **470.2 iterations/s**, crcfinal `0x988c`. See its
-  README.
+  armclang). Measured GCC: **495.32 iterations/s**, armclang `-Omax`
+  **599.20**; crcfinal `0x988c`. See its README.
+- `bare/coremark_sram` — CoreMark with the timed kernel in **SRAM1**
+  (0x20000000); SRAM1 beats SRAM3 ~1.51×, so only SRAM1 is kept. Measured
+  gcc 382.57 / armclang `-Omax` 450.05 it/s. See its README.
 - `app/board_hello` — board self-test (renamed from `app/blink_hello`): LED
   blink + ADC internal channels (VREFINT / temperature / VBAT), GL5516 light
   sensor on PA4 (raw code + mV), DHT11 on PE2, MPU6050 6-axis on I2C1
@@ -51,9 +55,12 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   `SystemInit()` initializes SDRAM through the HAL before the C runtime
   copies `.data` and clears `.bss`. Verified on hardware. See its README.
 - `app/dhry_180m` — Dhrystone with runtime data in SDRAM. Measured GCC:
-  **175,700.609 Dhrystones/s, 0.556 DMIPS/MHz**.
+  **174,611 Dhrystones/s, 0.552 DMIPS/MHz**.
 - `app/coremark_180m` — CoreMark with runtime data in SDRAM. Measured GCC:
-  **194.246 iterations/s**, crcfinal `0x988c`.
+  **194.39 iterations/s** (armclang `-Omax` 231.59), crcfinal `0x988c`.
+- `app/coremark_sram` — CoreMark with the timed kernel in **SRAM1** and
+  runtime data in SDRAM (mixed-memory case). Measured GCC **168.57** / armclang
+  `-Omax` **200.45** it/s, crcfinal `0x988c`.
 - `bare/spi_flash_test` and `app/spi_flash_test` — W25Q128FVSG erase/program/read
   comparison using internal-SRAM versus SDRAM-resident buffers. Both report
   JEDEC `0xEF4018` and pass verification; see their READMEs for measurements.

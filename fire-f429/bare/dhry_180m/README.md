@@ -6,14 +6,17 @@ the **fire-f429** board (STM32F429IGT6, bare metal) clocked at **180 MHz**
 build with either **GNU arm-none-eabi-gcc** or **Keil Arm Compiler 6
 (armclang)**, selected at configure time.
 
-## Results (measured on hardware, 180 MHz, hard-float, GCC)
+## Results (measured on hardware, 180 MHz, hard-float)
 
 | Toolchain    | Flags                                      | Dhrystones/s | DMIPS/MHz |
 | ------------ | ------------------------------------------ | ------------ | --------- |
-| GCC 15.3.1   | `-Ofast -ffp-contract=fast -funroll-loops` | 391,198      | 1.237     |
+| GCC 15.3.1   | `-Ofast -ffp-contract=fast -funroll-loops` | 391,236      | 1.237     |
+| ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | **445,434** | **1.408** |
 
-Two consecutive runs: 391,236 / 391,160 Dhrystones/s (2.556 / 2.557 µs per
-run). All runs print correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
+Per toolchain, only the highest measured configuration is shown (armclang
+`-Omax` measures the same 445,434 as `-Ofast` — applying the nano-f411
+finding that `-Omax` adds nothing for Dhrystone). All runs print correct final
+values (Int_Glob=5, Arr_2_Glob = runs+10, …).
 
 > ⚠ **Do not use LTO for Dhrystone.** GCC `-flto` sees the whole program and
 > hoists the loop-invariant work out of the timed loop, inflating the score

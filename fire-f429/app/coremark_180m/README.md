@@ -7,18 +7,19 @@ HAL from `SystemInit()` before the C runtime.
 
 ## Results
 
-Measured on hardware with GCC 15.3.1, `-Ofast -ffp-contract=fast -funroll-loops`,
-180 MHz, 10,000 iterations:
+Measured on hardware, 180 MHz, 10,000 iterations, SysTick timing:
 
-| Build | iterations/s | validation |
-| ----- | ------------ | ---------- |
-| Bare, internal SRAM | 470.234 | OK (`0x988c`) |
-| SDRAM app | 194.246 | OK (`0x988c`) |
+| Build | Flags | iterations/s | validation |
+| ----- | ----- | ------------ | ---------- |
+| Bare, internal SRAM | `-Ofast -ffp-contract=fast -funroll-all-loops` (gcc) | **495.32** | OK (`0x988c`) |
+| Bare, `-Omax` (armclang) | `-Omax -fno-lto` | **599.20** | OK (`0x988c`) |
+| SDRAM app, gcc default | `-Ofast -ffp-contract=fast -funroll-all-loops` | **194.39** | OK (`0x988c`) |
+| SDRAM app, `-Omax` (armclang) | `-Omax -fno-lto` | **231.59** | OK (`0x988c`) |
 
-The SDRAM result is about 58.7% lower than the internal-SRAM result, while the
-matching CRC confirms that the workload completed correctly. CoreMark's
-working data is now in external SDRAM, so its random/list/matrix accesses pay
-the SDRAM access latency.
+The SDRAM figures are ~60% lower than the internal-SRAM ones, while the
+matching CRC confirms the workload completed correctly. CoreMark's working
+data is now in external SDRAM, so its random/list/matrix accesses pay the
+SDRAM access latency. armclang `-Omax` helps here too (231.59 vs 194.39 gcc).
 
 CoreMark's CRC validation detects incorrect or skipped work. Differences are
 interpreted only when the compiler, flags, clock, and iteration count match.
@@ -29,4 +30,5 @@ interpreted only when the compiler, flags, clock, and iteration count match.
 cmake -G Ninja -B build .
 ninja -C build
 ninja -C build flash
+# armclang / -Omax: -DSTM32_TOOLCHAIN=armclang -DBENCH_OPT= -DBENCH_OPT_C="-Omax -fno-lto"
 ```

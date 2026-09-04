@@ -38,6 +38,12 @@ _eram         = ORIGIN(RAM)  + LENGTH(RAM);
 _Min_Heap_Size = 0x400;
 _Min_Stack_Size = 0x1000;
 
+/* RAM/CCM code-execution defaults. Projects that do not use a `.ram_code`
+   output section get these as 0, making the startup's copy loop a no-op. */
+PROVIDE(_sram_code = 0);
+PROVIDE(_eram_code = 0);
+PROVIDE(_sram_code_idata = 0);
+
 SECTIONS
 {
   .isr_vector :

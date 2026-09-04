@@ -7,15 +7,15 @@ HAL from `SystemInit()` before the C runtime.
 
 ## Results
 
-Measured on hardware with GCC 15.3.1, `-Ofast -ffp-contract=fast -funroll-loops`,
-180 MHz, no LTO:
+Measured on hardware with GCC 15.3.1, 180 MHz, no LTO:
 
-| Build | Dhrystones/s | DMIPS/MHz |
-| ----- | ------------ | --------- |
-| Bare, internal SRAM | 391,198 | 1.237 |
-| SDRAM app | 175,700.609 | 0.556 |
+| Build | Flags | Dhrystones/s | DMIPS/MHz |
+| ----- | ----- | ------------ | --------- |
+| Bare, internal SRAM | `-Ofast -ffp-contract=fast -funroll-loops` | 391,236 | 1.237 |
+| Bare, armclang | `-Ofast -ffp-contract=fast -funroll-loops` | 445,434 | 1.408 |
+| SDRAM app | `-Ofast -ffp-contract=fast -funroll-loops` (gcc) | 174,611 | 0.552 |
 
-The SDRAM result is about 55.1% lower than the internal-SRAM result. The
+The SDRAM result is about 55.4% lower than the internal-SRAM result. The
 benchmark still passes all final-value checks; the reduction is the expected
 cost of placing its frequently accessed globals and heap in external SDRAM.
 

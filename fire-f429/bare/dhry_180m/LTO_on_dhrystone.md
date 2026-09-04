@@ -87,7 +87,7 @@ benchmark's own ecosystem:
 CoreMark's timed section is CRC-protected on every run. If the compiler
 hoisted or skipped the list/matrix/state-machine work, the printed
 `crcfinal` would change — the benchmark would *fail* validation, not silently
-inflate. In this repo GCC+LTO CoreMark (426.6 vs 427.7 iterations/s, ~0.3 %)
+inflate. In this repo GCC+LTO CoreMark (490.70 vs 495.32 iterations/s, ~0.9 %)
 confirms LTO adds nothing measurable to CoreMark, consistent with the
 StackOverflow observation that CoreMark is insensitive to LTO.
 
