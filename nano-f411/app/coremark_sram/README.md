@@ -40,17 +40,17 @@ reference line above.
 | Toolchain | Flags | Iterations/Sec (SRAM) | Time (s) | CRC (crcfinal) |
 | --------- | ----- | --------------------- | -------- | -------------- |
 | GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **207.91** | 48.10 | 0x988c |
-| ARMCLANG (Keil AC6) | `-Omax -fno-lto` (see below) | **244.15** | 40.96 | 0x988c |
-| ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | 211.08 | 47.38 | 0x988c |
+| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **244.15** | 40.96 | 0x988c |
 | ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 185.82 | 53.82 | 0x988c |
 
 All runs print `Correct operation validated` with `crcfinal = 0x988c`.
 
-Keil AC6's `-Omax` (with `-fno-lto`) gives the same speed-up in SRAM as in
-flash (244.15 vs 211.08 it/s at `-Ofast`). Note the flash version of the same
-build reaches **339.997** it/s, so even at `-Omax` FLASH+ART stays ~1.39×
-faster than SRAM. ST's published "341" for the SRAM-based run is not
-reproduced here; the flash 339 is (see `coremark_100m/README.md`).
+Per toolchain, only the highest measured configuration is shown. Keil AC6's
+`-Omax` (with `-fno-lto`) applies in SRAM too (244.15 it/s), but note the
+flash version of the same build reaches **339.997** it/s, so even at `-Omax`
+FLASH+ART stays ~1.39× faster than SRAM. ST's published "341" for the
+SRAM-based run is not reproduced here; the flash 339 is (see
+`coremark_100m/README.md`).
 
 ### Timing method: SysTick, not DWT/CYCCNT
 
