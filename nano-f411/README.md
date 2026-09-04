@@ -39,7 +39,7 @@ LED, PA0 button, USART1 console, newlib stubs, ST HAL wiring) and the CMake
 helpers in `cmake/`.
 
 > ⚠ **Do not use LTO for Dhrystone.** GCC `-flto` hoists loop-invariant work
-> out of the timed region and inflates the score ~2.2× (still passing the
+> out of the timed region and inflates the score ~2.1× (still passing the
 > checks). See `app/dhry_100m/LTO_on_dhrystone.md`.
 
 ## RAM code-execution
