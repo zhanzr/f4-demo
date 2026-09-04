@@ -17,6 +17,12 @@ set(STM32F4_HAL_ROOT
     "Root of the STM32F4 HAL+ CMSIS (vendored `drivers/` or a full STM32Cube_FW_F4 package)")
 
 set(BOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/../board)
+# Linker script. Default is the board's standard one; a project may point this
+# at its own script (e.g. to run benchmark code from a RAM/CCM region) by
+# setting BOARD_LINKER_SCRIPT before including this file.
+if(NOT BOARD_LINKER_SCRIPT)
+    set(BOARD_LINKER_SCRIPT ${BOARD_DIR}/stm32f407vet6.ld)
+endif()
 set(STM32F4_HAL_INC ${STM32F4_HAL_ROOT}/STM32F4xx_HAL_Driver/Inc)
 set(STM32F4_HAL_SRC ${STM32F4_HAL_ROOT}/STM32F4xx_HAL_Driver/Src)
 set(STM32F4_CMSIS_DEV ${STM32F4_HAL_ROOT}/CMSIS/Device/ST/STM32F4xx/Include)
@@ -91,7 +97,7 @@ function(stm32f407_apply_board TGT OPT)
         set(_STARM_SYSROOT "${STARM_ROOT}/lib/clang-runtimes/newlib")
         set(_STARM_LIBDIR "${_STARM_SYSROOT}/arm-none-eabi/armv7m_hard_fpv4_sp_d16_exn_rtti_unaligned_size/lib")
         set(_LDFLAGS "-nostartfiles")
-        set(_LDFLAGS "${_LDFLAGS} -Xlinker -T -Xlinker ${BOARD_DIR}/stm32f407vet6.ld")
+        set(_LDFLAGS "${_LDFLAGS} -Xlinker -T -Xlinker ${BOARD_LINKER_SCRIPT}")
         set(_LDFLAGS "${_LDFLAGS} -Xlinker --gc-sections")
         set(_LDFLAGS "${_LDFLAGS} -Xlinker -Map=${PROJECT_NAME}.map")
         set(_LDFLAGS "${_LDFLAGS} -L${_STARM_LIBDIR}")
@@ -102,7 +108,7 @@ function(stm32f407_apply_board TGT OPT)
         set(_LDFLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 ${OPT}")
         set(_LDFLAGS "${_LDFLAGS} -Wl,--gc-sections -nostartfiles")
         set(_LDFLAGS "${_LDFLAGS} -Wl,-Map=${PROJECT_NAME}.map")
-        set(_LDFLAGS "${_LDFLAGS} -T ${BOARD_DIR}/stm32f407vet6.ld")
+        set(_LDFLAGS "${_LDFLAGS} -T ${BOARD_LINKER_SCRIPT}")
         set(_LDFLAGS "${_LDFLAGS} -lc -lm")
     endif()
 

@@ -76,9 +76,27 @@ Schematic / board manual: `board_sch.pdf`.
 | `app/blink_hello`  | Cycles LED1/2/3 every 250 ms @ 168 MHz + UART banner/tick prints + internal ADC (VREFINT/temp/VBAT) sampling (GCC) |
 | `app/dhry_168m`    | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_168m`| CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
+| `app/coremark_sram` | CoreMark 1.0.1 from **SRAM2** — kernel in 0x2001C000, copy-in'd at boot (works: 401.75 iters/s) |
+| `app/coremark_ccm` | CoreMark 1.0.1 from **CCM** — kernel in 0x10000000 (**CCM code does not work here** — see below) |
+| `app/ram_test` | Minimal SRAM2/CCM execution probes (trivial function proves which regions run code) |
 | `app/eth_http_server` | HTTP server over Ethernet (DP83848). ⚠️ **BROKEN** — see the Ethernet note above. |
 | `app/eeprom_test`  | AT24C02 EEPROM (I2C1: PB8=SCL, PB9=SDA) erase/program/read test |
 | `app/spi_flash_test` | W25Q64 SPI flash (SPI2: PE3=CS, PC2=MISO, PB10=SCK, PC3=MOSI) erase/program/read test |
+
+### RAM / CCM code-execution test status
+
+Measured with `app/ram_test` (and `coremark_sram` / `coremark_ccm`):
+
+| Memory | Code execution | Note |
+| ------ | -------------- | ---- |
+| **SRAM2** (0x2001C000) | **Works** | `coremark_sram` runs and validates (401.75 iters/s, crc 0x988c) |
+| **CCM** (0x10000000) | **Does not work** | Hard fault (BFSR.IBUSERR) on the first CCM instruction fetch |
+
+CCM data access works and the MPU is disabled, so this is recorded as an
+observed test result on this board — **CCM code does not work here** — not a
+proven root cause. It is intentionally not generalized to a claim about all
+STM32F407 parts (see `nano-f407`, which is a healthy board, for a
+cross-check).
 
 `blink` is built with arm-none-eabi-gcc. The two benchmarks build with any of
 three toolchains — **arm-none-eabi-gcc**, **Keil Arm Compiler 6 (armclang)**,

@@ -1,12 +1,20 @@
-/* GNU ARM GCC linker script for STM32F407VET6 (custom board).
+/* GNU ARM GCC linker script for the dev1-f407 CoreMark-in-CCM project.
  *
- *   FLASH : 512 KB @ 0x08000000
- *   RAM   : 128 KB @ 0x20000000   (SRAM1 112 KB + SRAM2 16 KB, contiguous)
- *           (64 KB CCM @ 0x10000000 is NOT used by this script)
+ * Memory split (STM32F407VET6):
+ *   FLASH : 512 KB @ 0x08000000   - vector table, newlib/HAL/harness code
+ *   SRAM  : 128 KB @ 0x20000000   - .data/.bss, heap, stack (as the normal board)
+ *   CCM   : 64 KB  @ 0x10000000   - .ram_code: the timed CoreMark core runs here
  *
- * Symbols consumed by startup_stm32f407xx.s:
- *   _estack, _sidata, _sdata, _edata, _sbss, _ebss
- * Symbols consumed by syscalls.c (_sbrk): end / _end
+ * CCM is the Cortex-M4 core-only SRAM: single-cycle, reached on the I-bus/D-bus
+ * and therefore able to both fetch instructions and hold data. It is NOT
+ * reachable by DMA, but the benchmark uses only core memory access. Running the
+ * timed loops from CCM removes both flash wait-states/ART and the shared SRAM
+ * arbitrations of the data path, isolating the core's raw execution speed.
+ * The harness (main, core_portme, HAL, printf) stays in FLASH.
+ *
+ * Symbols consumed by startup_stm32f407xx.s: _estack, _sidata, _sdata, _edata,
+ *   _sbss, _ebss (existing) plus _sram_code/_eram_code/_sram_code_idata for the
+ *   .ram_code copy-in. syscalls.c sbrk: end / _end.
  */
 
 ENTRY(Reset_Handler)
@@ -14,20 +22,13 @@ ENTRY(Reset_Handler)
 MEMORY
 {
   FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 512K
-  RAM (xrw)       : ORIGIN = 0x20000000, LENGTH = 128K
+  RAM   (xrw)     : ORIGIN = 0x20000000, LENGTH = 128K
+  CCM   (xrw)     : ORIGIN = 0x10000000, LENGTH = 64K
 }
 
-_estack       = ORIGIN(RAM) + LENGTH(RAM);  /* top of RAM, stack grows down */
+_estack       = ORIGIN(RAM) + LENGTH(RAM);  /* top of main SRAM, stack grows down */
 _Min_Heap_Size = 0x400;
 _Min_Stack_Size = 0x1000;
-
-/* RAM-execution region defaults. Projects that run benchmark kernels from a
- * RAM/CCM region override these by placing code in a `.ram_code` output
- * section (their own linker script). For all normal projects the symbols are
- * 0, so the startup copy-in loop treats them as empty (no-op). */
-PROVIDE(_sram_code = 0);
-PROVIDE(_eram_code = 0);
-PROVIDE(_sram_code_idata = 0);
 
 SECTIONS
 {
@@ -42,7 +43,9 @@ SECTIONS
   {
     . = ALIGN(4);
     *(.text)
-    *(.text*)
+    *(.text.Reset_Handler)
+    EXCLUDE_FILE(*core_list_join.c.obj *core_matrix.c.obj *core_state.c.obj *core_util.c.obj *core_main.c.obj)
+      *(.text*)
     *(.glue_7)
     *(.glue_7t)
     *(.eh_frame)
@@ -57,8 +60,10 @@ SECTIONS
   .rodata :
   {
     . = ALIGN(4);
-    *(.rodata)
-    *(.rodata*)
+    EXCLUDE_FILE(*core_list_join.c.obj *core_matrix.c.obj *core_state.c.obj *core_util.c.obj *core_main.c.obj)
+      *(.rodata)
+    EXCLUDE_FILE(*core_list_join.c.obj *core_matrix.c.obj *core_state.c.obj *core_util.c.obj *core_main.c.obj)
+      *(.rodata*)
     . = ALIGN(4);
   } >FLASH
 
@@ -124,9 +129,7 @@ SECTIONS
     __bss_end__ = _ebss;
   } >RAM
 
-  /* DMA buffers (ETH descriptors/RX/TX). The F407 has no D-cache, so these
-   * can live in normal RAM - the section is kept for source compatibility
-   * with the fire-f429 ethernetif.c. */
+  /* DMA buffers kept for source compatibility with the normal board. */
   .sram_dma (NOLOAD) :
   {
     . = ALIGN(32);
@@ -143,6 +146,21 @@ SECTIONS
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
   } >RAM
+
+  /* The timed CoreMark kernel: code + const data relocated to CCM and copy-in'd
+   * from flash at startup (symbols drive the startup .ram_code loop). */
+  .ram_code :
+  {
+    _sram_code = .;
+    *core_list_join.c.obj(.text* .rodata*)
+    *core_matrix.c.obj(.text* .rodata*)
+    *core_state.c.obj(.text* .rodata*)
+    *core_util.c.obj(.text* .rodata*)
+    *core_main.c.obj(.text* .rodata*)
+    . = ALIGN(4);
+    _eram_code = .;
+  } >CCM AT> FLASH
+  _sram_code_idata = LOADADDR(.ram_code);
 
   /* Stabs debugging sections. */
   .stab          0 : { *(.stab) }

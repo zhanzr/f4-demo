@@ -14,9 +14,13 @@
 
 /* Linker-provided end of static data / start of heap. */
 extern char end[];
-extern char _estack[];
+/* _estack is a linker *address*, not an array. Declare it as a scalar so the
+ * heap/stack guard below uses integer (not array-subscript) arithmetic; this
+ * both removes a spurious -Warray-bounds warning and states the intent. */
+extern char _estack;
 
-#define HEAP_LIMIT ((char *)_estack - 0x1000)   /* leave room for the stack */
+/* Leave room for the stack: heap must stop 4 KB below the stack top. */
+#define HEAP_LIMIT ((char *)((uintptr_t)&_estack - 0x1000U))
 
 #ifdef __cplusplus
 extern "C" {

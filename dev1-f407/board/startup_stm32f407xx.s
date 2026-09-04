@@ -94,6 +94,29 @@ LoopFillZerobss:
   cmp r2, r4
   bcc FillZerobss
 
+/* Copy the RAM-execution code region (if any) from flash to target RAM/CCM.
+ * Projects that do not use such a region define the symbols as 0, so the
+ * start == end test below makes this a no-op for them. Newlib/harness code
+ * uses the standard .data copy above; only benchmark kernels placed in
+ * .ram_code by a project linker script are handled here. */
+  ldr r0, =_sram_code
+  ldr r1, =_eram_code
+  ldr r2, =_sram_code_idata
+  movs r3, #0
+  cmp r0, r1
+  bcs SkipRamCode
+
+CopyRamCode:
+  ldr r4, [r2, r3]
+  str r4, [r0, r3]
+  adds r3, r3, #4
+
+LoopCopyRamCode:
+  adds r4, r0, r3
+  cmp r4, r1
+  bcc CopyRamCode
+SkipRamCode:
+
 /* Call static constructors */
     bl __libc_init_array
 /* Call the application's entry point.*/
