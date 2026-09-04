@@ -11,6 +11,36 @@ Read it with any USB-serial adapter.
 
 Schematic / board manual: `board_sch.pdf`.
 
+> ## ⚠️ Board health / power safety notice (IMPORTANT — read first)
+>
+> **This specific board is damaged.** It was accidentally powered from too high a
+> voltage (6 V), which blew several onboard components. It still runs all
+> non-Ethernet projects correctly, but treat the board as partially damaged:
+>
+> 1. **Power supply range (safe).** This board needs **external power in the
+>    range 4.5–5.5 V** to operate safely. Anything above ~5.5 V can damage
+>    components — do **not** exceed it.
+> 2. **J5 jumper / USB isolation.** When powering from external power, you must
+>    **disconnect the USB cable from external power**, i.e. **remove the J5
+>    jumper**, so the two supplies do not fight. (External supply 5 V + USB 5 V
+>    back-feeding can push the rail high enough to stress parts.)
+> 3. **Two CAN PHY chips (TJA1050) are almost certainly broken.** Smoke was seen
+>    rising from these. Do not expect the CAN transceivers to work; the CAN
+>    interface should be considered dead.
+> 4. **The Ethernet PHY (DP83848) is broken — possibly also damaged by the same
+>    over-voltage event.** (See the Ethernet note below.) Do not rely on the
+>    Ethernet interface.
+> 5. **The MCU runs much hotter than a normal F407 board.** The on-chip junction
+>    temperature reads ~74–76 °C while idle/running (a healthy board reads
+>    ~51 °C), yet all tests pass and behavior appears normal. The main chip is
+>    **possibly partially damaged** — monitor temperature and don't push it hard
+>    for long stretches.
+>
+> Verified working (after the damage) at 168 MHz on hardware: `blink_hello`,
+> `blink_hello_48m`, `coremark_168m` (427.72 iter/s, crcfinal 0x988c), `dhry_168m`
+> (351,370 Dhry/s), `eeprom_test` (I2C, PASS), `spi_flash_test` (SPI W25Q64,
+> PASS). Only Ethernet is broken.
+
 > Note on SWV/ITM: the firmware also enables DWT + ITM and the `swv` target is
 > still defined, but the ULINK2's CMSIS-DAP firmware cannot capture SWO, so the
 > working console is the UART.
@@ -34,6 +64,10 @@ Schematic / board manual: `board_sch.pdf`.
 > (`pav2000/stm32f407-dp83848`) using the same pins — both fail identically.
 > This is a **hardware** issue (RMII 50 MHz clock / PHY strap / wiring), not
 > software. Do not rely on the Ethernet interface.
+>
+> > This was observed **after** the over-voltage event that damaged the board (see
+> > the board-health notice above) — the PHY may (also) have been damaged by the
+> > too-high 6 V supply.
 
 ## Projects (`app/`)
 
