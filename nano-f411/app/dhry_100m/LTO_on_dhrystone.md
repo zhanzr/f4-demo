@@ -86,10 +86,10 @@ benchmark's own ecosystem:
 CoreMark's timed section is CRC-protected on every run. If the compiler
 hoisted or skipped the list/matrix/state-machine work, the printed
 `crcfinal` would change — the benchmark would *fail* validation, not silently
-inflate. On this board GCC+LTO CoreMark measures 270.51 vs 267.78
-iterations/s (+1.0 %), confirming LTO adds nothing measurable to CoreMark,
-consistent with the StackOverflow observation that CoreMark is insensitive
-to LTO.
+inflate. On this board GCC+LTO CoreMark measures 285.34 vs 282.35
+iterations/s (+1.06 %) with the adopted `-funroll-all-loops` flags,
+confirming LTO adds nothing measurable to CoreMark, consistent with the
+StackOverflow observation that CoreMark is insensitive to LTO.
 
 ## Rules for using this repo's numbers
 

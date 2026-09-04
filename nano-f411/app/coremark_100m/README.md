@@ -11,15 +11,24 @@ works identically on all three compilers.
 ## Results
 
 Measured on hardware at 100 MHz (hard-float): capture the console while the
-chip runs the benchmark (it re-runs every ~47 s), and take the last complete
+chip runs the benchmark (it re-runs every ~37-49 s), and take the last complete
 `Iterations/Sec` line (earlier lines can be stale bytes from the previous
 firmware still draining from the ST-Link VCP buffer).
 
 | Toolchain | Flags | iterations/s | Time (s) | validation |
 | --------- | ------| ------------ | -------- | ---------- |
-| GCC | `-Ofast -ffp-contract=fast -funroll-loops` | **267.78** | 37.34 | `Correct operation validated`, crcfinal `0x988c` |
-| ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | **288.73** | 34.63 | `Correct operation validated`, crcfinal `0x988c` |
-| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | **253.68** | 39.42 | `Correct operation validated`, crcfinal `0x988c` |
+| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **282.35** | 35.42 | `Correct operation validated`, crcfinal `0x988c` |
+| GCC + LTO | default `+ -DSTM32_LTO=ON` | **285.34** | 35.05 | `Correct operation validated`, crcfinal `0x988c` |
+| ARMCLANG (Keil AC6) | `-Omax -fno-lto` (see below) | **339.997** | 29.41 | `Correct operation validated`, crcfinal `0x988c` |
+| ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | 288.73 | 34.63 | `Correct operation validated`, crcfinal `0x988c` |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 253.68 | 39.42 | `Correct operation validated`, crcfinal `0x988c` |
+
+Keil AC6 at `-Omax` reaches **339.997 iterations/s**, matching ST's published
+339 CoreMark for the F411 @ 100 MHz from flash. Bare `-Omax` makes armclang
+emit the code as an **LLVM LTO object** (`-fno-lto` in the C-only flags is what
+allows the GNU-ld flow in this repo to link it; Keil MDK uses armlink, which
+can consume the LTO objects directly). The same `-Omax` recipe applied to the
+SRAM variant is in `coremark_sram/README.md`.
 
 All runs share the same CRC (`crcfinal 0x988c`). Note CoreMark's per-run CRC
 forces the work to execute, so **LTO does not inflate it** the way it cheats
@@ -39,6 +48,14 @@ ninja flash          # programs the board via probe-rs / ST-Link (SWD)
 # armclang (optional)
 cmake -G Ninja -DSTM32_TOOLCHAIN=armclang ..
 ninja
+
+# armclang at -Omax (339.997 it/s; matches ST's published 339):
+# BENCH_OPT_C is applied to the C files only (arm-none-eabi-gcc rejects
+# -Omax at the asm/link step), and -fno-lto is required because -Omax would
+# otherwise emit LTO objects GNU ld cannot link.
+cmake -G Ninja -DSTM32_TOOLCHAIN=armclang '-DBENCH_OPT=' '-DBENCH_OPT_C=-Omax -fno-lto' ..
+ninja
+ninja flash
 
 # starm-clang (optional)
 cmake -G Ninja -DSTM32_TOOLCHAIN=starm-clang ..

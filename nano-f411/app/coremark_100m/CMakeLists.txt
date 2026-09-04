@@ -1,9 +1,15 @@
 # CoreMark 1.0.1 benchmark for the STM32F411CEU6 "nano-f411" board @ 100 MHz.
 # Default compiler is GNU arm-none-eabi-gcc at the most aggressive optimization
-# (-Ofast -ffp-contract=fast -funroll-loops) + hard-float.  Additional
+# (-Ofast -ffp-contract=fast -funroll-all-loops) + hard-float.  Additional
 # toolchains:
 #   armclang   — Keil Arm Compiler 6, C + GNU as/ld
 #   starm-clang — ST's LLVM 21 (starm-clang) + LLD; supports full LTO
+#
+# Tuning note (measured on hardware): -funroll-all-loops wins ~5% over
+# -funroll-loops on GCC (282.35 vs 267.78 it/s) and ~6.6% with -flto
+# (285.34). armclang -Omax (add -fno-lto via BENCH_OPT_C so GNU ld can link
+# it) hits 339.997 it/s — matching ST's published 339 — while staying flat
+# at 288.73 for any -O3/-Ofast/unroll combination. ST-clang is flat at 253.68.
 #
 # Pico-style workflow:
 #   mkdir -p build && cd build
@@ -32,6 +38,8 @@ set_property(CACHE STM32_TOOLCHAIN PROPERTY STRINGS gcc armclang starm-clang)
 
 # Link-time optimization. GCC: -flto; starm-clang: -flto=full via LLD.
 # armclang (Keil): LTO impossible — emits LLVM bitcode that GNU ld cannot use.
+# armclang '-Omax' also emits such bitcode without explicit LTO; pass
+# '-fno-lto' alongside it (see BENCH_OPT_C) to restore normal ELF objects.
 option(STM32_LTO "Enable LTO (gcc or starm-clang only)" OFF)
 
 if(NOT CMAKE_TOOLCHAIN_FILE)
@@ -55,8 +63,14 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-set(BENCH_OPT "-Ofast -ffp-contract=fast -funroll-loops" CACHE STRING
+set(BENCH_OPT "-Ofast -ffp-contract=fast -funroll-all-loops" CACHE STRING
     "Optimization flags for stm32f411_apply_board (e.g. -Omax for armclang)")
+
+# C-language-only optimization flags, applied to the C sources but NOT to the
+# GNU-as startup/toolchain files or the link step. Required for armclang-only
+# options that arm-none-eabi-gcc rejects (e.g. '-Omax').
+set(BENCH_OPT_C "" CACHE STRING
+    "Extra C-language-only optimization flags (e.g. armclang '-Omax'; not passed to ASM/link)")
 set(CORE ${CMAKE_CURRENT_SOURCE_DIR}/coremark_1_0_1)
 
 add_executable(${PROJECT_NAME}.elf
@@ -72,6 +86,12 @@ add_executable(${PROJECT_NAME}.elf
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f411_board.cmake)
 stm32f411_apply_board(${PROJECT_NAME}.elf "${BENCH_OPT}")
+
+if(BENCH_OPT_C)
+    separate_arguments(BENCH_OPT_C_LIST NATIVE_COMMAND "${BENCH_OPT_C}")
+    target_compile_options(${PROJECT_NAME}.elf PRIVATE
+        "$<$<COMPILE_LANGUAGE:C>:${BENCH_OPT_C_LIST}>")
+endif()
 
 target_include_directories(${PROJECT_NAME}.elf PRIVATE
     src

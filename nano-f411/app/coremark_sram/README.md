@@ -14,14 +14,15 @@ at the SRAM **base** — the largest spot, and one where neither the copier
 (`startup_stm32f411xx.s`) nor the linker places conflicting data.
 
 Executing *memory* changes CoreMark throughput on this core (byte-identical
-kernel code, SysTick timing on the same board):
+kernel code, SysTick timing on the same board; default gcc flags
+`-Ofast -ffp-contract=fast -funroll-all-loops`):
 
 | Execution memory (nano-f411 @ 100 MHz) | GCC it/s | Time (s) |
 | -------------------------------------- | -------- | -------- |
-| FLASH (ART I-cache, `coremark_100m`) | 267.78 | 37.34 |
-| SRAM @ 0x20000000 (this project) | 192.70 | 51.89 |
+| FLASH (ART I-cache, `coremark_100m`) | 282.35 | 35.42 |
+| SRAM @ 0x20000000 (this project) | 207.91 | 48.10 |
 
-**FLASH-with-ART is ~1.4× faster than SRAM:** the F4 flash is fetched over the
+**FLASH-with-ART is ~1.36× faster than SRAM:** the F4 flash is fetched over the
 dedicated ICode bus through the ART accelerator (128-bit prefetch + instruction
 cache), so tight loops run at near 1 instr/cycle with no bus arbitration. SRAM
 has no such accelerator and is fetched over the shared system bus, so it is
@@ -38,11 +39,18 @@ reference line above.
 
 | Toolchain | Flags | Iterations/Sec (SRAM) | Time (s) | CRC (crcfinal) |
 | --------- | ----- | --------------------- | -------- | -------------- |
-| GCC | `-Ofast -ffp-contract=fast -funroll-loops` | **192.70** | 51.89 | 0x988c |
-| ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | **211.08** | 47.38 | 0x988c |
-| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | **185.82** | 53.82 | 0x988c |
+| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **207.91** | 48.10 | 0x988c |
+| ARMCLANG (Keil AC6) | `-Omax -fno-lto` (see below) | **244.15** | 40.96 | 0x988c |
+| ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | 211.08 | 47.38 | 0x988c |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 185.82 | 53.82 | 0x988c |
 
 All runs print `Correct operation validated` with `crcfinal = 0x988c`.
+
+Keil AC6's `-Omax` (with `-fno-lto`) gives the same speed-up in SRAM as in
+flash (244.15 vs 211.08 it/s at `-Ofast`). Note the flash version of the same
+build reaches **339.997** it/s, so even at `-Omax` FLASH+ART stays ~1.39×
+faster than SRAM. ST's published "341" for the SRAM-based run is not
+reproduced here; the flash 339 is (see `coremark_100m/README.md`).
 
 ### Timing method: SysTick, not DWT/CYCCNT
 
@@ -67,6 +75,7 @@ cmake -G Ninja ..
 ninja
 ninja flash          # programs via probe-rs / ST-Link (SWD)
 # armclang / starm-clang via -DSTM32_TOOLCHAIN=... as in coremark_100m
+# armclang -Omax (244.15 it/s here): -DBENCH_OPT= -DBENCH_OPT_C="-Omax -fno-lto"
 ```
 
 Console is the board's USART1 / ST-Link VCP (115200 8-N-1) — see
