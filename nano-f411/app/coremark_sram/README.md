@@ -37,11 +37,11 @@ Measured on hardware (100 MHz, hard-float). Same run as `coremark_100m` but
 with the kernel in SRAM; that project's flash run is the "FLASH (ART I-cache)"
 reference line above.
 
-| Toolchain | Flags | Iterations/Sec (SRAM) | Time (s) | CRC (crcfinal) |
-| --------- | ----- | --------------------- | -------- | -------------- |
-| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **207.91** | 48.10 | 0x988c |
-| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **244.15** | 40.96 | 0x988c |
-| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 185.82 | 53.82 | 0x988c |
+| Toolchain | Flags | Iterations/Sec (SRAM) | Time (s) |
+| --------- | ----- | --------------------- | -------- |
+| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **207.91** | 48.10 |
+| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **244.15** | 40.96 |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 185.82 | 53.82 |
 
 All runs print `Correct operation validated` with `crcfinal = 0x988c`.
 

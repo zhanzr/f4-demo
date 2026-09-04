@@ -7,6 +7,8 @@ the ST-Link's **virtual COM port (VCP)** is the console.
 
 ![nano-f411 board — top view](board_images/board_0.png)
 
+![nano-f411 board — photo](board_images/board_3.jpg)
+
 > Note on SWV/ITM: the firmware enables DWT + ITM (the F411's SWO output is
 > available on **TRACESWO = PB3, AF0**), but the ST-Link VCP UART is the console;
 > SWO capture is simply not used.
