@@ -30,7 +30,10 @@ volatile ee_s32 seed5_volatile = 0;
  * standard, compiler-agnostic CoreMark timing method: HAL_GetTick() is a
  * call into the HAL and returns the ms counter, so no optimizer can reorder
  * or hoist an inline hardware register read the way it could with the DWT
- * CYCCNT on clang builds. ms resolution is plenty for a multi-10-s run. */
+ * CYCCNT on clang builds. ms resolution is plenty for a multi-10-s run.
+ * (The earlier DWT CYCCNT timing was dropped: CYCCNT is 32 bits and wraps
+ * every 2^32/168 MHz = 25.57 s; SRAM runs > 25.57 s under-reported elapsed
+ * time by a full wrap period, inflating iterations/s.) */
 #define GETMYTIME(_t) (*_t = HAL_GetTick())
 #define MYTIMEDIFF(fin, ini) ((fin) - (ini))
 #define TIMER_RES_DIVIDER 1

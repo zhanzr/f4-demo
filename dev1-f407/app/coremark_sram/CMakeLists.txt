@@ -2,7 +2,8 @@
 # on the dev1-f407 (custom STM32F407VET6) @ 168 MHz.
 # The benchmark core (core_*.c) is linked into SRAM2 via a project linker
 # script and copy-in'd from flash at startup; harness/HAL/printf stay in flash.
-# Timed with the DWT cycle counter (no SysTick ISR).
+# Timed with SysTick (HAL_GetTick, 1 kHz) — see core_portme.c for the DWT
+# wrap reason.
 #
 # Pico-style workflow (gcc default; armclang / starm-clang for alternate CCs):
 #   mkdir -p build && cd build

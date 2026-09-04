@@ -25,25 +25,18 @@ volatile ee_s32 seed5_volatile = 0;
 
 #define CORETIMETYPE uint32_t
 
-/* Time the CoreMark loops with the ARM DWT cycle counter (CYCCNT): a free
- * 32-bit counter running at the CPU clock with no ISR and no per-tick cost.
- * A single register read in start_time()/stop_time() is the minimum possible
- * timing overhead. 2^32 cycles @ 168 MHz ~ 25.6 s, well above any CoreMark
- * run, so a plain modular (unsigned wrap) difference is exact.
- * Compare to the old SysTick-based HAL_GetTick() (1 kHz ISR + ms resolution). */
-#define DWT_CTRL        (*(volatile uint32_t *)0xE0001000U)
-#define DWT_CYCCNT      (*(volatile uint32_t *)0xE0001004U)
-#define DEMCR           (*(volatile uint32_t *)0xE000EDFCU)
-#define DEMCR_TRCENA    (1U << 24U)
-#define DWT_CTRL_CYCCNTENA (1U << 0U)
-
-#define GETMYTIME(_t) (*_t = DWT_CYCCNT)
+/* Time the CoreMark loops with the HAL SysTick 1 kHz tick (HAL_GetTick()).
+ * SysTick is enabled by HAL_Init()/HAL_InitTick() at main() and is the
+ * standard, compiler-agnostic CoreMark timing method: HAL_GetTick() is a
+ * call into the HAL and returns the ms counter, so no optimizer can reorder
+ * or hoist an inline hardware register read the way it could with the DWT
+ * CYCCNT on clang builds. ms resolution is plenty for a multi-10-s run. */
+#define GETMYTIME(_t) (*_t = HAL_GetTick())
 #define MYTIMEDIFF(fin, ini) ((fin) - (ini))
 #define TIMER_RES_DIVIDER 1
 #define SAMPLE_TIME_IMPLEMENTATION 1
-/* EE_TICKS_PER_SEC must equal the CPU clock (CYCCNT counts CPU cycles), so
- * CoreMark's CoreMark/MHz and CoreMark/sec are derived from raw cycle counts. */
-#define EE_TICKS_PER_SEC (HAL_RCC_GetHCLKFreq() / TIMER_RES_DIVIDER)
+/* HAL_GetTick() advances at 1 kHz regardless of the CPU clock. */
+#define EE_TICKS_PER_SEC (1000U / TIMER_RES_DIVIDER)
 
 static CORETIMETYPE start_time_val, stop_time_val;
 
@@ -83,11 +76,6 @@ void portable_init(core_portable *p, int *argc, char *argv[])
         ee_printf("ERROR! Please define ee_u32 to a 32b unsigned type!\n");
     }
     p->portable_id = 1;
-
-    /* Enable the ARM DWT cycle counter (0-count start; free-running thereafter). */
-    DEMCR      |= DEMCR_TRCENA;
-    DWT_CYCCNT  = 0;
-    DWT_CTRL   |= DWT_CTRL_CYCCNTENA;
 }
 
 void portable_fini(core_portable *p)

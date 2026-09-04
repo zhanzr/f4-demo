@@ -75,8 +75,8 @@ Schematic / board manual: `board_sch.pdf`.
 | ------------------ | ------------ |
 | `app/blink_hello`  | Cycles LED1/2/3 every 250 ms @ 168 MHz + UART banner/tick prints + internal ADC (VREFINT/temp/VBAT) sampling (GCC) |
 | `app/dhry_168m`    | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
-| `app/coremark_168m`| CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang **or** starm-clang, `-Ofast -ffp-contract=fast -funroll-all-loops` (AC6 `-Omax` reaches 542.09 it/s) |
-| `app/coremark_sram` | CoreMark 1.0.1 from **SRAM2** — kernel in 0x2001C000, copy-in'd at boot (works: 460.13 iters/s, DWT-timed) |
+| `app/coremark_168m`| CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang **or** starm-clang, `-Ofast -ffp-contract=fast -funroll-all-loops` (AC6 `-Omax` reaches 541.15 it/s) |
+| `app/coremark_sram` | CoreMark 1.0.1 from **SRAM2** — kernel in 0x2001C000, copy-in'd at boot (works: 211.43 iters/s SysTick) |
 | `app/ram_test` | Minimal SRAM2/CCM execution probes (trivial function proves which regions run code) |
 | `app/eth_http_server` | HTTP server over Ethernet (DP83848). ⚠️ **BROKEN** — see the Ethernet note above. |
 | `app/eeprom_test`  | AT24C02 EEPROM (I2C1: PB8=SCL, PB9=SDA) erase/program/read test |
@@ -88,7 +88,7 @@ Measured with `app/ram_test` (and `coremark_sram`):
 
 | Memory | Code execution | Note |
 | ------ | -------------- | ---- |
-| **SRAM2** (0x2001C000) | **Works** | `coremark_sram` runs and validates (460.13 iters/s DWT-timed, crc 0x988c) |
+| **SRAM2** (0x2001C000) | **Works** | `coremark_sram` runs and validates (211.43 iters/s SysTick, crc 0x988c) |
 | **CCM** (0x10000000) | **Does not work** | Hard fault (BFSR.IBUSERR) on the first CCM instruction fetch |
 
 **Root cause (confirmed):** CCM cannot execute code on these parts. `ccm_probe`
@@ -211,7 +211,7 @@ Three gotchas are handled in `cmake/`:
 object as `.llvm.lto` bitcode with no ELF symbols, which GNU ld cannot consume
 (it links a broken binary with no code). Pairing `-Omax` with `-fno-lto`
 (compile-time optimization only, normal ELF objects) makes GNU ld link it fine
-and is the fastest CoreMark config on this board (542 it/s). Both are passed
+and is the fastest CoreMark config on this board (541 it/s). Both are passed
 as **C-only** flags via `-DBENCH_OPT_C="-Omax -fno-lto"` (with `BENCH_OPT`
 cleared). armclang `-flto` in general is **not linkable with GNU ld** for the
 same `.llvm.lto` reason. GCC `-flto` works fine (plugin resolves symbols), so
@@ -224,16 +224,18 @@ Results @ 168 MHz (same board, same 25 MHz HSE clock tree). Best per toolchain
 | -------------- | --------------------- | --------------------- | --------------------- |
 | Dhrystone 2.1  | 355,114 Dhrystones/s  | 393,391 Dhrystones/s  | 398,963 Dhrystones/s  |
 | Dhrystone      | 1.20 DMIPS/MHz        | 1.33 DMIPS/MHz        | 1.35 DMIPS/MHz        |
-| CoreMark 1.0.1 | 449.0 iterations/s    | 542.1 iterations/s (`-Omax`) | 401.4 iterations/s    |
+| CoreMark 1.0.1 | 448.5 iterations/s    | 541.2 iterations/s (`-Omax`) | 401.4 iterations/s    |
 
 All runs validate (Dhrystone final values match; CoreMark `Correct operation
 validated`, crcfinal `0x988c`).
 
 Notable: applying the nano-f411 optimization campaign here (the `-Omax
 -fno-lto` armclang recipe via `BENCH_OPT_C`) lifts armclang CoreMark from
-451 to **542 it/s** — now the clear winner on CoreMark — while the ST/LLVM
+451 to **541 it/s** — now the clear winner on CoreMark — while the ST/LLVM
 line still leads Dhrystone (starm-clang 398,963 > armclang 393,391 > GCC
-355,114).
+355,114). All CoreMark timings are SysTick-based (the 32-bit CYCCNT DWT
+counter wraps at ~25.6 s and invalidates the longer SRAM runs — see
+`app/coremark_sram/README.md`).
 
 ### Recommendation: do not adopt Arm Compiler 6
 

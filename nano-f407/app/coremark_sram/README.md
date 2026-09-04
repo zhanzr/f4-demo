@@ -66,19 +66,18 @@ wall-clock time.
 
 ### Timing method: SysTick, not DWT/CYCCNT
 
-Earlier builds timed the kernel with the DWT cycle counter (CYCCNT). The GCC
-and ARMCLANG builds timed correctly with it, but the **ST Arm clang build
-miscompiled the DWT-based timing**: `-Ofast` (and even `-O2`) produced a
-self-flagged invalid result ("Must execute for at least 10 secs") with a
-physically implausible rate (thousands of iterations/s across a ~54 s wall
-run). Diagnostics confirmed the CPU and CYCCNT both run at a true 168 MHz and
-that the timing leaf functions are compiled correctly, so this is a clang
-optimizer interaction with the DWT-timing control flow in `core_main.c`, not
-a board/clock/HAL fault. Switching `core_portme.c` to the HAL SysTick
-1 kHz tick (a call into the HAL) yields consistent, self-validating runs on
-all three toolchains (as well as the earlier — and misleadingly fast — DWT
-numbers for GCC/armclang, which under-counted wall time for SRAM code), which
-is why the project now times with SysTick.
+Earlier builds timed the kernel with the DWT cycle counter (CYCCNT). That was
+inaccurate for these runs: CYCCNT is a 32-bit counter that wraps every
+2^32 / 168 MHz ≈ 25.57 s, and the SRAM runs (29-53 s) exceed that, so the
+cycle difference under-reports elapsed time by one wrap period and inflates
+iterations/s (the flash runs, ~22 s, stayed below the wrap and matched
+SysTick). The **ST Arm clang build showed this most severely**: its DWT-based
+timing produced a self-flagged invalid result ("Must execute for at least
+10 secs") with a physically implausible rate (thousands of iterations/s across
+a ~54 s wall run). Switching `core_portme.c` to the HAL SysTick 1 kHz tick (a
+call into the HAL — a 32-bit ms counter with a ~49.7-day period, so it cannot
+wrap on any CoreMark run) yields consistent, self-validating runs on all three
+toolchains, which is why the project now times with SysTick.
 
 > CCM (0x10000000) cannot run code on this part — see `ccm_probe` and the
 > board README "RAM / CCM code-execution test status".

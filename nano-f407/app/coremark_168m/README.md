@@ -5,7 +5,7 @@ CoreMark 1.0.1 (EEMBC, `coremark_1_0_1/`), **10,000 iterations**, on the
 P=2 → SYSCLK). Compiler-agnostic: the same sources build with
 **GNU arm-none-eabi-gcc**, **Keil Arm Compiler 6 (armclang)** or **ST Arm
 clang** (starm-clang), selected at configure time. The CoreMark port uses the
-HAL `clock()`/`usec()` (DWT) from `../../board/`.
+HAL's SysTick 1 kHz tick (`clock()`/`usec()` via `HAL_GetTick()`).
 
 ## Results
 
