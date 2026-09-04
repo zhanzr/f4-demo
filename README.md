@@ -50,14 +50,39 @@ STM32Cube MCU Package → "STM32Cube FW_F4 V1.28.3", installed under
 
 ## Toolchain / environment
 
-* GNU arm-none-eabi-gcc 15.3.1 (default) or Keil AC6 armclang (`-DSTM32_TOOLCHAIN=armclang`).
+* GNU arm-none-eabi-gcc 15.3.1 (default) or Keil AC6 armclang (`-DSTM32_TOOLCHAIN=armclang`); ST Arm clang, where supported (F407/F411 benchmark projects).
 * CMake + Ninja (Pico-style; MSYS2 mingw64 `build.sh` adds them to `PATH`).
 * probe-rs (SWD flashing) + OpenOCD (alternative).
 
-Build + flash any project with:
+## Build configuration
+
+Configure and build each project from its own directory
+(`<board>/app/<project>` or `<board>/bare/<project>`). No absolute paths are
+needed — the build directory is a relative subfolder of the project.
 
 ```bash
-cd dev1-f407/app/blink
-bash build.sh        # or: mkdir build && cd build && cmake -G Ninja .. && ninja
-ninja flash
+cd nano-f411/app/blink_hello
+
+# default: gcc + the project's hard-coded optimization level
+bash build.sh          # == mkdir -p build && cd build && cmake -G Ninja .. && ninja
+ninja flash            # program via probe-rs (ST-Link SWD)
+
+# other toolchains: use one build dir per toolchain
+# (CMAKE_TOOLCHAIN_FILE is cached at configure time)
+cmake -G Ninja -S . -B build-armclang -DSTM32_TOOLCHAIN=armclang
+ninja -C build-armclang
+cmake -G Ninja -S . -B build-starm-clang -DSTM32_TOOLCHAIN=starm-clang
+ninja -C build-starm-clang
 ```
+
+**Optimization levels** are passed to the board-apply CMake function in each
+project's `CMakeLists.txt`:
+
+* **General projects** need nothing on the command line — their optimization is
+  hard-coded at a sane level: `-O1` for simple demos (`blink_hello`,
+  `ram_test`), `-O2`/`-O3` for peripheral-heavy apps.
+* **Benchmark projects** (`coremark_*`, `dhry_*`) default to aggressive flags
+  and let you override them at configure time with `-DBENCH_OPT="..."` (plus
+  `-DBENCH_OPT_C="..."` for C-only flags such as armclang `-Omax`). The
+  fastest measured per-toolchain settings are documented in each benchmark's
+  README.

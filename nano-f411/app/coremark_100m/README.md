@@ -34,6 +34,25 @@ All runs share the same CRC (`crcfinal 0x988c`). Note CoreMark's per-run CRC
 forces the work to execute, so **LTO does not inflate it** the way it cheats
 Dhrystone — see `dhry_100m/LTO_on_dhrystone.md`.
 
+## Most aggressive flags
+
+Highest measured score per toolchain (see Results):
+
+- **ARMCLANG (Keil AC6): `-Omax -fno-lto`** — 339.997 it/s (ST's published 339).
+  Bare `-Omax` makes armclang emit LLVM LTO objects that GNU ld cannot link,
+  hence `-fno-lto`. Pass it as a **C-only** flag (`BENCH_OPT_C`) so it stays
+  off the asm/link steps, with `BENCH_OPT` cleared.
+- **GCC:** `-Ofast -ffp-contract=fast -funroll-all-loops` (already the default)
+  → 282.35 it/s; add `-DSTM32_LTO=ON` for **285.34** it/s.
+- **ST Arm clang:** flat at its default `-Ofast -ffp-contract=fast
+  -funroll-loops` (253.68 it/s); none of the tuning flags move it.
+
+```bash
+cmake -G Ninja -DSTM32_TOOLCHAIN=armclang '-DBENCH_OPT=' '-DBENCH_OPT_C=-Omax -fno-lto' ..
+cmake -G Ninja -DSTM32_TOOLCHAIN=gcc -DSTM32_LTO=ON ..
+cmake -G Ninja -DSTM32_TOOLCHAIN=starm-clang ..
+```
+
 ## Build
 
 Requires the CMake/Ninja environment from the board-level `../../README.md`.

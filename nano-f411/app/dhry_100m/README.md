@@ -30,6 +30,22 @@ The toolchain choice is discussed in the board-level `../../README.md`: **Arm
 Compiler for Embedded 6.24 is the final feature release** (defect fixes only),
 so GCC is recommended for production work.
 
+## Most aggressive flags
+
+- **ARMCLANG (Keil AC6): `-Omax` gives nothing over `-Ofast`** for Dhrystone —
+  both measure 251,193 Dhrystones/s. The timed loop is already fully
+  optimized, so use the default `-Ofast -ffp-contract=fast -funroll-loops`.
+- **GCC:** `-Ofast -ffp-contract=fast -funroll-loops` (default) →
+  235,211 Dhrystones/s; **do not** add `-flto` (inflates to 494,927 — an
+  artifact, see `LTO_on_dhrystone.md`).
+- **ST Arm clang:** not supported for Dhrystone on this board (gcc/armclang
+  only).
+
+```bash
+cmake -G Ninja -DSTM32_TOOLCHAIN=armclang ..
+cmake -G Ninja -DSTM32_TOOLCHAIN=gcc ..
+```
+
 ## Build
 
 Requires the CMake/Ninja environment from the board-level `../../README.md`.

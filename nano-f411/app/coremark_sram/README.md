@@ -52,6 +52,24 @@ FLASH+ART stays ~1.39× faster than SRAM. ST's published "341" for the
 SRAM-based run is not reproduced here; the flash 339 is (see
 `coremark_100m/README.md`).
 
+## Most aggressive flags
+
+Highest measured score per toolchain (see Results):
+
+- **ARMCLANG (Keil AC6): `-Omax -fno-lto`** — 244.15 it/s. Same C-only recipe
+  as `coremark_100m` (see its README): clear `BENCH_OPT`, set
+  `BENCH_OPT_C="-Omax -fno-lto"`.
+- **GCC:** `-Ofast -ffp-contract=fast -funroll-all-loops` (default) →
+  207.91 it/s.
+- **ST Arm clang:** `-Ofast -ffp-contract=fast -funroll-loops` (default) →
+  185.82 it/s.
+
+```bash
+cmake -G Ninja -DSTM32_TOOLCHAIN=armclang '-DBENCH_OPT=' '-DBENCH_OPT_C=-Omax -fno-lto' ..
+cmake -G Ninja -DSTM32_TOOLCHAIN=gcc ..
+cmake -G Ninja -DSTM32_TOOLCHAIN=starm-clang ..
+```
+
 ### Timing method: SysTick, not DWT/CYCCNT
 
 Earlier versions of these builds timed the kernel with the DWT cycle counter
