@@ -29,9 +29,18 @@ junction temperature, VBAT) over the board console.
   clock; the F4 temp sensor needs ~10 µs minimum).
 - VBAT is scaled by **4**: the F411's VBAT input passes an internal 1/4 divider.
 
+The board banner also reports the Flash controller state (the ART Accelerator):
+`PRFTEN`/`ICEN`/`DCEN` are set from `HAL_Init()` via the HAL conf macros
+(`PREFETCH_ENABLE`, `INSTRUCTION_CACHE_ENABLE`, `DATA_CACHE_ENABLE`) in
+`board/stm32f4xx_hal_conf.h`, so the flash executes with 0-wait-state effective
+throughput.
+
 Example output (as measured on this board, 3.3 V supply):
 
 ```
+==== nano-f411 (STM32F411CEU6) blink_hello @ 100 MHz ====
+SYSCLK = 100000000 Hz (100 MHz)
+FLASH_ACR = 0x700 (LATENCY_3 | PRFTEN | ICEN | DCEN = ART on)
 ADC1: temp=947 code, VREFINT=1498 code, VBAT=991 code
      Vdda ~= 3308 mV, chip temp ~= 30 C, VBAT ~= 3200 mV
 ```

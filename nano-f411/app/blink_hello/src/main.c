@@ -48,6 +48,8 @@ int main(void)
     printf("SYSCLK = %lu Hz (%lu MHz)\r\n",
            (unsigned long)SystemCoreClock,
            (unsigned long)(SystemCoreClock / 1000000UL));
+    printf("FLASH_ACR = 0x%0lX (LATENCY_3 | PRFTEN | ICEN | DCEN = ART on)\r\n",
+           (unsigned long)(FLASH->ACR & 0x700U));
 
     uint32_t phase = 0;
     uint32_t last_report = 0;
