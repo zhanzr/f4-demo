@@ -24,7 +24,7 @@ the ST-Link's **virtual COM port (VCP)** is the console.
 | -------------------- | ------------ |
 | `app/blink_hello`    | Blinks the PB0 LED + samples the three **ADC1 internal channels** (temperature IN16, VREFINT IN17, VBAT IN18) and prints them (GCC) |
 | `app/dhry_168m`      | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
-| `app/coremark_168m`  | CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
+| `app/coremark_168m`  | CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-all-loops` (AC6 `-Omax` reaches 541.15 it/s) |
 | `app/coremark_sram`  | CoreMark with the timed kernel linked into **SRAM1** (0x20000000) and copy-in'd at startup; SysTick timing |
 
 ## RAM / CCM code-execution test status
@@ -51,10 +51,11 @@ these parts; code that must execute should live in flash or SRAM1/SRAM2 (system
 bus). The fault reproduces on this and every other STM32F407 tested; it is a
 design trait, not a board defect.
 
-`blink_hello` is built with arm-none-eabi-gcc. The two benchmarks build with
-either **arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)** — selected
-with `-DSTM32_TOOLCHAIN=gcc|armclang` at configure time. All projects share
-the board support in `board/` (168 MHz clock from the 8 MHz HSE, PB0 LED,
+`blink_hello` is built with arm-none-eabi-gcc. The benchmarks build with
+**arm-none-eabi-gcc**, **Keil Arm Compiler 6 (armclang)** or — for the
+CoreMark projects — **ST Arm clang** — selected with
+`-DSTM32_TOOLCHAIN=gcc|armclang|starm-clang` at configure time. All projects
+share the board support in `board/` (168 MHz clock from the 8 MHz HSE, PB0 LED,
 USART1 console, newlib stubs, ST HAL wiring) and the CMake helpers in
 `cmake/`.
 

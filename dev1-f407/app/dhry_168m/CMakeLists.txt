@@ -56,6 +56,13 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(BENCH_OPT "-Ofast -ffp-contract=fast -funroll-loops" CACHE STRING
     "Optimization flags for stm32f407_apply_board (e.g. -Omax for armclang)")
 
+# C-language-only optimization flags, applied to the C sources but NOT to the
+# GNU-as startup/toolchain files or the link step. Required for armclang-only
+# options that arm-none-eabi-gcc rejects (e.g. '-Omax'; pair with -fno-lto so
+# GNU ld can link the result).
+set(BENCH_OPT_C "" CACHE STRING
+    "Extra C-language-only optimization flags (e.g. armclang '-Omax'; not passed to ASM/link)")
+
 add_executable(${PROJECT_NAME}.elf
     src/main.c
     src/utils.c
@@ -65,6 +72,12 @@ add_executable(${PROJECT_NAME}.elf
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f407_board.cmake)
 stm32f407_apply_board(${PROJECT_NAME}.elf "${BENCH_OPT}")
+
+if(BENCH_OPT_C)
+    separate_arguments(BENCH_OPT_C_LIST NATIVE_COMMAND "${BENCH_OPT_C}")
+    target_compile_options(${PROJECT_NAME}.elf PRIVATE
+        "$<$<COMPILE_LANGUAGE:C>:${BENCH_OPT_C_LIST}>")
+endif()
 
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/flash-targets.cmake)

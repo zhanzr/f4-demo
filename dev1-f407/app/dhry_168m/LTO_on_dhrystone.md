@@ -3,7 +3,7 @@
 **Short version:** Dhrystone is trivially vulnerable to whole-program
 optimization. With GCC `-flto` the compiler sees the entire benchmark at once,
 hoists the (loop-invariant) work out of the timed loop, and the score jumps
-~2.2× — 770,713 vs 351,370 Dhrystones/s on this board. The result still *looks*
+~2.2× — 770,713 vs 355,114 Dhrystones/s on this board. The result still *looks*
 correct (the hoisted code still runs once, so the final values match), which is
 exactly why this number must never be quoted. This is a **known, documented
 weakness of Dhrystone itself**, not a bug in our toolchain or setup.
@@ -47,14 +47,14 @@ iteration. The remaining (hoisted) code still executes — once — so the print
 
 | Build                | Flags                                     | µs/run | Dhrystones/s | DMIPS/MHz |
 | -------------------- | ----------------------------------------- | ------ | ------------ | --------- |
-| GCC 15.3.1           | `-Ofast -ffp-contract=fast -funroll-loops` | 2.85  | 351,370     | 1.190     |
+| GCC 15.3.1           | `-Ofast -ffp-contract=fast -funroll-loops` | 2.82  | 355,114     | 1.203     |
 | GCC 15.3.1 + LTO     | above `+ -flto`                            | 1.30  | 770,713     | 2.611 ⚠   |
 | armclang 6.24 (AC6)  | `-Ofast -ffp-contract=fast -funroll-loops` | 2.54  | 393,391     | 1.333     |
 
-- Non-LTO GCC and armclang agree with each other within ~12 % — consistent,
+- Non-LTO GCC and armclang agree with each other within ~11 % — consistent,
   meaningful numbers.
 - The LTO build runs **2.2× faster per iteration** with identical final
-  values. Per-run time drops from 2.85 µs to 1.30 µs; the "extra" 1.55 µs of
+  values. Per-run time drops from 2.82 µs to 1.30 µs; the "extra" 1.52 µs of
   work was simply moved out of the timed region.
 - This is the same mechanism reported elsewhere: a public aarch64 example
   shows Dhrystone inflating from 5.2 M to 19.5 M Dhrystones/s (~3.7×) with
@@ -86,7 +86,7 @@ benchmark's own ecosystem:
 CoreMark's timed section is CRC-protected on every run. If the compiler
 hoisted or skipped the list/matrix/state-machine work, the printed
 `crcfinal` would change — the benchmark would *fail* validation, not silently
-inflate. In this repo GCC+LTO CoreMark (426.6 vs 427.7 iterations/s, ~0.3 %)
+inflate. In this repo GCC+LTO CoreMark (447.57 vs 449.00 iterations/s, ~0.3 %)
 confirms LTO adds nothing measurable to CoreMark, consistent with the
 StackOverflow observation that CoreMark is insensitive to LTO.
 

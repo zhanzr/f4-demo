@@ -3,22 +3,52 @@
 CoreMark 1.0.1 (EEMBC, `coremark_1_0_1/`), **10,000 iterations**, on the
 **nano-f407** board (STM32F407VET6) at **168 MHz** (HSE 8 MHz → PLL M=8 N=336
 P=2 → SYSCLK). Compiler-agnostic: the same sources build with
-**GNU arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)**, selected at
-configure time. The CoreMark port uses the HAL `clock()`/`usec()` (DWT) from
-`../../board/`.
+**GNU arm-none-eabi-gcc**, **Keil Arm Compiler 6 (armclang)** or **ST Arm
+clang** (starm-clang), selected at configure time. The CoreMark port uses the
+HAL `clock()`/`usec()` (DWT) from `../../board/`.
 
-## Results (measured on hardware, 168 MHz, hard-float, GCC)
+## Results
 
-| Toolchain    | Flags                                    | iterations/s | validation |
-| ------------ | ---------------------------------------- | ------------ | ---------- |
-| GCC 15.3.1   | `-Ofast -ffp-contract=fast -funroll-loops` | 427.7       | OK (0x988c) |
+Measured on hardware at 168 MHz (hard-float): capture the console while the
+chip runs the benchmark, and take the last complete `Iterations/Sec` line
+(earlier lines can be stale bytes from the previous firmware still draining
+from the console adapter's buffer).
 
-Two consecutive runs: 427.716 iterations/s each (10,000 iterations in 23.38 s).
-All runs print `Correct operation validated` and identical CRC
-(crcfinal `0x988c`). (For reference, GCC `-flto` gives 426.6 iterations/s on
-this board — ~0.3 %, noise — because CoreMark's per-run CRC forces
-the work to execute, so LTO cannot cheat it the way it cheats Dhrystone; see
-`dhry_168m/LTO_on_dhrystone.md`.)
+| Toolchain | Flags | iterations/s | Time (s) |
+| --------- | ------| ------------ | -------- |
+| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **448.55** | 22.29 |
+| GCC + LTO | default `+ -DSTM32_LTO=ON` | 447.57 | 22.34 |
+| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **541.15** | 18.48 |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 401.41 | 24.91 |
+
+Per toolchain, only the highest measured configuration is shown. All runs
+print `Correct operation validated` with an identical CRC (crcfinal `0x988c`).
+
+The `-funroll-all-loops` default is the nano-f411 tuning (`-Ofast`-class);
+**ARMCLANG at `-Omax` is the fastest** at 541.15 iterations/s. Bare `-Omax`
+makes armclang emit LLVM LTO objects that GNU ld cannot link — see the
+per-toolchain recipes below. GCC `-flto` adds nothing (447.57 vs 448.55,
+noise) because CoreMark's per-run CRC forces the work to execute; contrast
+with Dhrystone (`dhry_168m/LTO_on_dhrystone.md`).
+
+## Most aggressive flags
+
+Highest measured score per toolchain (see Results):
+
+- **ARMCLANG (Keil AC6): `-Omax -fno-lto`** — 541.15 it/s. Pass it as a
+  **C-only** flag (`BENCH_OPT_C`) so it stays off the asm/link steps, with
+  `BENCH_OPT` cleared (`-fno-lto` stops the LLVM LTO objects GNU ld cannot
+  use; Keil MDK links them directly with armlink).
+- **GCC:** `-Ofast -ffp-contract=fast -funroll-all-loops` (default) →
+  448.55 it/s. `-DSTM32_LTO=ON` is unchanged (447.57).
+- **ST Arm clang:** `-Ofast -ffp-contract=fast -funroll-loops` (default) →
+  401.41 it/s.
+
+```bash
+cmake -G Ninja -DSTM32_TOOLCHAIN=armclang '-DBENCH_OPT=' '-DBENCH_OPT_C=-Omax -fno-lto' ..
+cmake -G Ninja -DSTM32_TOOLCHAIN=gcc ..
+cmake -G Ninja -DSTM32_TOOLCHAIN=starm-clang ..
+```
 
 ## Build
 
@@ -34,23 +64,19 @@ ninja flash          # programs the board via probe-rs / ST-Link (SWD)
 # armclang (optional)
 cmake -G Ninja -DSTM32_TOOLCHAIN=armclang ..
 ninja
-
-# GNU gcc + LTO (valid here; contrast with Dhrystone — see dhry_168m/LTO_on_dhrystone.md)
-cmake -G Ninja -DSTM32_TOOLCHAIN=gcc -DSTM32_LTO=ON ..
-ninja
 ```
 
-Use a separate build dir per toolchain (`build/`, `build-gcc/`,
-`build-gcc-lto/`) because `CMAKE_TOOLCHAIN_FILE` is cached after configure.
+Use a separate build dir per toolchain (`build/`, `build-armclang/`)
+because `CMAKE_TOOLCHAIN_FILE` is cached after configure.
 
 ## Measuring
 
 CoreMark prints iterations/s and the CRC on the last line, e.g.:
 
 ```
-Total time (secs) = 23.380000
-Iterations/Sec   = 427.715997
-Iterations/Sec   = 427.715997
+Total time (secs) = 22.294000
+Iterations/Sec   = 448.551180
+Iterations/Sec   = 448.551180
 ```
 
 The serial console and the capture recipe are described in the board-level

@@ -12,10 +12,14 @@ Normal toolchain comparison (no LTO):
 
 | Toolchain                | Flags                                    | Dhrystones/s | DMIPS/MHz |
 | ------------------------ | ---------------------------------------- | ------------ | --------- |
-| GCC 15.3.1               | `-Ofast -ffp-contract=fast -funroll-loops` | 351,370     | 1.190     |
-| armclang 6.24 (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | 393,391     | 1.333     |
+| GCC 15.3.1               | `-Ofast -ffp-contract=fast -funroll-loops` | 355,114     | 1.203     |
+| armclang 6.24 (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | **393,391** | **1.333** |
+| ST Arm clang (LLVM 21.1.1) | `-Ofast -ffp-contract=fast -funroll-loops` | **398,963** | **1.352** |
 
-All builds print correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
+Per toolchain, only the highest measured configuration is shown; armclang
+`-Omax` measures the same ~393,000 as `-Ofast` (392,464 — applying the
+nano-f411 finding that `-Omax` adds nothing for Dhrystone). All builds print
+correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
 
 > ⚠ **Do not use LTO for Dhrystone.** GCC `-flto` sees the whole program and
 > hoists the loop-invariant work out of the timed loop, inflating the score
@@ -23,11 +27,11 @@ All builds print correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
 > The LTO number is meaningless and is **excluded from the comparison above**.
 > Full explanation and reproduction: **`LTO_on_dhrystone.md`** in this folder.
 
-armclang is ~12 % faster than plain GCC here, but see the toolchain note in
-the board-level `../../README.md`: **Arm Compiler for Embedded 6.24 is the
-final feature release** (defect fixes only), and the whole armclang/GNU-ld/newlib
-mixing needed two shims (`../../cmake/printf_rename.h`,
-`../../cmake/armclang_force_wint_t.h`).
+armclang is ~11 % and ST Arm clang ~12 % faster than plain GCC here, but see
+the toolchain note in the board-level `../../README.md`: **Arm Compiler for
+Embedded 6.24 is the final feature release** (defect fixes only), and the
+whole armclang/GNU-ld/newlib mixing needed two shims
+(`../../cmake/printf_rename.h`, `../../cmake/armclang_force_wint_t.h`).
 For new work prefer the open LLVM Embedded Toolchain or GNU gcc.
 
 ## Build
