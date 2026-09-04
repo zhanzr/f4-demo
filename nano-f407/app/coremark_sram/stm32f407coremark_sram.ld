@@ -1,12 +1,18 @@
-/* GNU ARM GCC linker script for STM32F407VET6 (custom board).
+/* GNU ARM GCC linker script for the nano-f407 CoreMark-in-SRAM project.
  *
- *   FLASH : 512 KB @ 0x08000000
- *   RAM   : 128 KB @ 0x20000000   (SRAM1 112 KB + SRAM2 16 KB, contiguous)
- *           (64 KB CCM @ 0x10000000 is NOT used by this script)
+ * Memory split (STM32F407VET6):
+ *   FLASH  : 512 KB @ 0x08000000   - vector table, newlib/HAL/harness code
+ *   SRAM1  : 112 KB @ 0x20000000   - .data/.bss, heap, stack (as the normal board)
+ *   SRAM2  : 16 KB  @ 0x2001C000   - .ram_code: the timed CoreMark core runs here
  *
- * Symbols consumed by startup_stm32f407xx.s:
- *   _estack, _sidata, _sdata, _edata, _sbss, _ebss
- * Symbols consumed by syscalls.c (_sbrk): end / _end
+ * The benchmark kernel (core_*.c) is placed in SRAM2 (via .ram_code, which is
+ * copy-in'd from flash at startup by Reset_Handler) so the timed loops execute
+ * with zero flash wait-state / ART influence, isolating pure CPU+SRAM throughput.
+ * The harness (main, core_portme, HAL, printf) stays in FLASH.
+ *
+ * Symbols consumed by startup_stm32f407xx.s: _estack, _sidata, _sdata, _edata,
+ *   _sbss, _ebss (existing) plus _sram_code/_eram_code/_sram_code_idata for the
+ *   .ram_code copy-in. syscalls.c sbrk: end / _end.
  */
 
 ENTRY(Reset_Handler)
@@ -14,20 +20,13 @@ ENTRY(Reset_Handler)
 MEMORY
 {
   FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 512K
-  RAM (xrw)       : ORIGIN = 0x20000000, LENGTH = 128K
+  SRAM1 (xrw)     : ORIGIN = 0x20000000, LENGTH = 112K
+  SRAM2 (xrw)     : ORIGIN = 0x2001C000, LENGTH = 16K
 }
 
-_estack       = ORIGIN(RAM) + LENGTH(RAM);  /* top of RAM, stack grows down */
+_estack       = ORIGIN(SRAM1) + LENGTH(SRAM1);  /* top of SRAM1, stack grows down */
 _Min_Heap_Size = 0x400;
 _Min_Stack_Size = 0x1000;
-
-/* RAM-execution region defaults. Projects that run benchmark kernels from a
- * RAM/CCM region override these by placing code in a `.ram_code` output
- * section (their own linker script). For all normal projects the symbols are
- * 0, so the startup copy-in loop treats them as empty (no-op). */
-PROVIDE(_sram_code = 0);
-PROVIDE(_eram_code = 0);
-PROVIDE(_sram_code_idata = 0);
 
 SECTIONS
 {
@@ -42,7 +41,9 @@ SECTIONS
   {
     . = ALIGN(4);
     *(.text)
-    *(.text*)
+    *(.text.Reset_Handler)
+    EXCLUDE_FILE(*core_list_join.c.obj *core_matrix.c.obj *core_state.c.obj *core_util.c.obj *core_main.c.obj)
+      *(.text*)
     *(.glue_7)
     *(.glue_7t)
     *(.eh_frame)
@@ -57,8 +58,10 @@ SECTIONS
   .rodata :
   {
     . = ALIGN(4);
-    *(.rodata)
-    *(.rodata*)
+    EXCLUDE_FILE(*core_list_join.c.obj *core_matrix.c.obj *core_state.c.obj *core_util.c.obj *core_main.c.obj)
+      *(.rodata)
+    EXCLUDE_FILE(*core_list_join.c.obj *core_matrix.c.obj *core_state.c.obj *core_util.c.obj *core_main.c.obj)
+      *(.rodata*)
     . = ALIGN(4);
   } >FLASH
 
@@ -109,7 +112,7 @@ SECTIONS
     . = ALIGN(4);
     _edata = .;
     __data_end__ = _edata;
-  } >RAM AT> FLASH
+  } >SRAM1 AT> FLASH
 
   .bss :
   {
@@ -122,7 +125,15 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;
     __bss_end__ = _ebss;
-  } >RAM
+  } >SRAM1
+
+  /* DMA buffers kept for source compatibility; SRAM2 can host them if needed. */
+  .sram_dma (NOLOAD) :
+  {
+    . = ALIGN(32);
+    *(.sram_dma)
+    . = ALIGN(32);
+  } >SRAM1
 
   ._user_heap_stack :
   {
@@ -132,7 +143,22 @@ SECTIONS
     . = . + _Min_Heap_Size;
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
-  } >RAM
+  } >SRAM1
+
+  /* The timed CoreMark kernel: code + const data relocated to SRAM2 and
+   * copy-in'd from flash at startup (symbols drive the startup .ram_code loop). */
+  .ram_code :
+  {
+    _sram_code = .;
+    *core_list_join.c.obj(.text* .rodata*)
+    *core_matrix.c.obj(.text* .rodata*)
+    *core_state.c.obj(.text* .rodata*)
+    *core_util.c.obj(.text* .rodata*)
+    *core_main.c.obj(.text* .rodata*)
+    . = ALIGN(4);
+    _eram_code = .;
+  } >SRAM2 AT> FLASH
+  _sram_code_idata = LOADADDR(.ram_code);
 
   /* Stabs debugging sections. */
   .stab          0 : { *(.stab) }

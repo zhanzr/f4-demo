@@ -25,6 +25,33 @@ the ST-Link's **virtual COM port (VCP)** is the console.
 | `app/blink_hello`    | Blinks the PB0 LED + samples the three **ADC1 internal channels** (temperature IN16, VREFINT IN17, VBAT IN18) and prints them (GCC) |
 | `app/dhry_168m`      | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_168m`  | CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
+| `app/coremark_sram`  | CoreMark with the timed kernel linked into **SRAM2** (0x2001C000) and copy-in'd at startup; CYCCNT timing |
+| `app/coremark_ccm`   | CoreMark with the timed kernel linked into **CCM** (0x10000000); CYCCNT timing |
+| `app/ram_test`       | Minimal RAM-execution probe: `ccm_function`/`ram_hello` in SRAM2 (or CCM) |
+| `app/ccm_probe`      | Focused CCM instruction-fetch isolation (data vs. code-bytes vs. fetch) |
+
+## RAM / CCM code-execution test status
+
+Shared `.ram_code` support lives in `board/` (startup copy-in loop + linker
+`PROVIDE` defaults + `BOARD_LINKER_SCRIPT` in the CMake board helper). Project
+linker scripts decide where `.ram_code` lands.
+
+Verified on this (healthy) board at 168 MHz:
+
+| Region | Code execution | Notes |
+| ------ | -------------- | ----- |
+| **SRAM2** (0x2001C000) | **works** | `coremark_sram` completes: **401.75 it/s**, `crcfinal 0x988c`, `Correct operation validated`. Matches the dev1-f407 SRAM2 result. |
+| **CCM** (0x10000000) | **does not work** | Instruction fetch from CCM hard-faults with `BFSR.IBUSERR` (CFSR=0x00000100, HFSR=0x40000000), on **any** chip. |
+
+**CCM root cause (isolated, chip-independent):** `ccm_probe` shows that on this
+STM32F407 the CPU (a) reads/writes CCM **data** correctly, (b) finds the correct
+code bytes resident at the fetch address, but (c) **cannot fetch an instruction**
+from 0x10000000 — it bus-faults on the first fetch. This matches the documented
+STM32F4 architecture: the CCM RAM hangs off the Cortex-M4 **D-bus (data)** only,
+so the instruction bus never reaches 0x10000000. CCM is a **data-only** region on
+these parts; code that must execute should live in flash or SRAM1/SRAM2 (system
+bus). The same fault was observed on the dev1-f407; it is a design trait, not a
+board defect.
 
 `blink_hello` is built with arm-none-eabi-gcc. The two benchmarks build with
 either **arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)** — selected
