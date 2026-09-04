@@ -2,7 +2,6 @@
  *
  *   FLASH : 512 KB @ 0x08000000
  *   RAM   : 128 KB @ 0x20000000   (single contiguous SRAM block on F411)
- *           (128 KB CCM @ 0x10000000 is NOT used by this script)
  *
  * Symbols consumed by startup_stm32f411xx.s:
  *   _estack, _sidata, _sdata, _edata, _sbss, _ebss

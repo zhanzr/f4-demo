@@ -92,13 +92,13 @@ Measured with `app/ram_test` (and `coremark_sram`):
 | **CCM** (0x10000000) | **Does not work** | Hard fault (BFSR.IBUSERR) on the first CCM instruction fetch |
 
 **Root cause (confirmed):** CCM cannot execute code on these parts. `ccm_probe`
-(see `nano-f407`) shows the CPU reads/writes CCM **data** fine and the correct
+shows the CPU reads/writes CCM **data** fine and the correct
 code is resident at the fetch address, but the **instruction fetch** from
 0x10000000 always bus-faults. This matches the STM32F4 architecture: CCM RAM is
 connected only to the Cortex-M4 **D-bus (data bus)**, so the instruction bus
 never reaches it — CCM is a **data-only** region on these parts. Code must run
-from flash or SRAM1/SRAM2 (system bus). The same fault reproduces on the
-healthy `nano-f407`, so it is a chip-level trait, **not** a board defect.
+from flash or SRAM1/SRAM2 (system bus). It is a chip-level design trait,
+**not** a board defect.
 
 `blink` is built with arm-none-eabi-gcc. The two benchmarks build with any of
 three toolchains — **arm-none-eabi-gcc**, **Keil Arm Compiler 6 (armclang)**,
@@ -226,9 +226,7 @@ comparison — **no LTO** (LTO invalidates Dhrystone; see
 | CoreMark 1.0.1 | 427.7 iterations/s    | 451.0 iterations/s    | 401.4 iterations/s    |
 
 All runs validate (Dhrystone final values match; CoreMark `Correct operation
-validated`, crcfinal `0x988c`). These match the nano-f407 board to within
-normal board-to-board variance (~0.01 % on CoreMark; ~1 % on Dhrystone,
-attributable to the different HSE crystal accuracy and silicon).
+validated`, crcfinal `0x988c`).
 
 Notable: the toolchains rank differently per benchmark. On **Dhrystone** the
 ST/LLVM line wins (starm-clang 398,963 > armclang 393,314 > GCC 351,370), while

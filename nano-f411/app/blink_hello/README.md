@@ -9,18 +9,17 @@ junction temperature, VBAT) over the board console.
 ## What it demonstrates
 
 - Basic GPIO blink (the board's LED, PC13, low-active).
-- The **F411 internal-channel layout**, which differs from the F407:
+- The **F411 internal-channel layout**:
 
   | Channel | What it is |
   | ------- | ---------- |
   | ADC1_IN17 | VREFINT (internal reference, ~1.21 V) |
   | ADC1_IN18 | Temperature sensor **or** VBAT (shared input) |
 
-  > On F411 the temperature sensor and VBAT are **both** on IN18, selected by
-  > the `TSVREFE` / `VBATE` bits in `ADC1->CCR` (mutually exclusive; the
-  > driver cannot enable both). The temp sensor also gates VREFINT, so VBAT is
-  > converted in a separate pass while `TSVREFE` is off. On the F407 these were
-  > three independent channels (temp on IN16) convertible in one scan.
+  > The temperature sensor and VBAT are **both** on IN18, selected by the
+  > `TSVREFE` / `VBATE` bits in `ADC1->CCR` (mutually exclusive; the driver
+  > cannot enable both). The temp sensor also gates VREFINT, so VBAT is
+  > converted in a separate pass while `TSVREFE` is off.
 
 - VREFINT is used to back out the actual supply voltage, which then scales the
   temperature and VBAT readings.
@@ -28,14 +27,13 @@ junction temperature, VBAT) over the board console.
   (`TS_CAL1` @ 30 °C / `TS_CAL2` @ 110 °C from system memory), and the internal
   channels are sampled with a **480-cycle** sample time (38.4 µs @ 12.5 MHz ADC
   clock; the F4 temp sensor needs ~10 µs minimum).
-- VBAT is scaled by **4**: on F411 the VBAT input passes a 1/4 internal divider
-  (older F407 parts use /2).
+- VBAT is scaled by **4**: the F411's VBAT input passes an internal 1/4 divider.
 
-Example output:
+Example output (as measured on this board, 3.3 V supply):
 
 ```
-ADC1: temp=1000 code, VREFINT=1504 code, VBAT=790 code
-     Vdda ~= 3296 mV, chip temp ~= 44 C, VBAT ~= 2542 mV
+ADC1: temp=947 code, VREFINT=1498 code, VBAT=991 code
+     Vdda ~= 3308 mV, chip temp ~= 30 C, VBAT ~= 3200 mV
 ```
 
 ## Build

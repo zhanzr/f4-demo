@@ -44,7 +44,7 @@ The timed region shrinks to a skeleton that re-checks a couple of values per
 iteration. The remaining (hoisted) code still executes — once — so the printed
 `Int_Glob`, `Arr_2_Glob`, etc. are still correct and the built-in check passes.
 
-## Measured evidence (dev1-f407 @ 168 MHz, `-Ofast` — same mechanism on fire-f429)
+## Measured evidence (a 168 MHz STM32F407, `-Ofast` — same mechanism on fire-f429)
 
 | Build                | Flags                                     | µs/run | Dhrystones/s | DMIPS/MHz |
 | -------------------- | ----------------------------------------- | ------ | ------------ | --------- |

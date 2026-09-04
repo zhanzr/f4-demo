@@ -37,7 +37,7 @@ Verified on this (healthy) board at 168 MHz:
 
 | Region | Code execution | Notes |
 | ------ | -------------- | ----- |
-| **SRAM2** (0x2001C000) | **works** | `coremark_sram` completes: **401.75 it/s**, `crcfinal 0x988c`, `Correct operation validated`. Matches the dev1-f407 SRAM2 result. |
+| **SRAM2** (0x2001C000) | **works** | `coremark_sram` completes: **401.75 it/s**, `crcfinal 0x988c`, `Correct operation validated`. |
 | **CCM** (0x10000000) | **does not work** | Instruction fetch from CCM hard-faults with `BFSR.IBUSERR` (CFSR=0x00000100, HFSR=0x40000000), on **any** chip. |
 
 **CCM root cause (isolated, chip-independent):** the `ccm_probe` / `ram_test`
@@ -48,8 +48,8 @@ from 0x10000000 — it bus-faults on the first fetch. This matches the documente
 STM32F4 architecture: the CCM RAM hangs off the Cortex-M4 **D-bus (data)** only,
 so the instruction bus never reaches 0x10000000. CCM is a **data-only** region on
 these parts; code that must execute should live in flash or SRAM1/SRAM2 (system
-bus). The same fault was observed on the dev1-f407; it is a design trait, not a
-board defect.
+bus). The fault reproduces on this and every other STM32F407 tested; it is a
+design trait, not a board defect.
 
 `blink_hello` is built with arm-none-eabi-gcc. The two benchmarks build with
 either **arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)** — selected

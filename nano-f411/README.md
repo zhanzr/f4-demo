@@ -7,14 +7,13 @@ the ST-Link's **virtual COM port (VCP)** is the console.
 
 ![nano-f411 board — top view](board_images/board_0.png)
 
-> Note on SWV/ITM: the firmware enables DWT + ITM (for the DWT cycle counter),
-> but the ST-Link VCP UART is the console; SWO capture is not used. F411 has no
-> SWO-ready pin allocation used here (TRACESWO = PB3, AF0).
+> Note on SWV/ITM: the firmware enables DWT + ITM (the F411's SWO output is
+> available on **TRACESWO = PB3, AF0**), but the ST-Link VCP UART is the console;
+> SWO capture is simply not used.
 
 ## Board facts
 
-- MCU: **STM32F411CEU6** (Cortex-M4F @ up to 100 MHz, 512 KB flash, 128 KB SRAM,
-  128 KB CCM — CCM is D-bus/data-only, see below)
+- MCU: **STM32F411CEU6** (Cortex-M4F @ up to 100 MHz, 512 KB flash, 128 KB SRAM)
 - HSE crystal **25 MHz**
 - LED: **PC13**, single, **low-active** (`LED_ON()` = GPIO_PIN_RESET)
 - User button: **PA0**, momentary, **active-low** (`BTN_PRESSED()` = pin == 0)
@@ -43,42 +42,37 @@ helpers in `cmake/`.
 > out of the timed region and inflates the score ~2.2× (still passing the
 > checks). See `app/dhry_100m/LTO_on_dhrystone.md`.
 
-## RAM / CCM code-execution
+## RAM code-execution
 
 Shared `.ram_code` support lives in `board/` (startup copy-in loop + linker
 `PROVIDE` defaults + `BOARD_LINKER_SCRIPT` in the CMake board helper).
 
 - **SRAM is a single 128 KB block** at 0x20000000 — there is no SRAM1/SRAM2
-  split on the F411 (unlike the F407). `coremark_sram` executes the kernel
-  from its base.
-- **CCM (128 KB @ 0x10000000) cannot run code on this part.** As on every
-  STM32F4, the CCM RAM hangs off the Cortex-M4 **D-bus (data)** only, so
-  instruction fetch from 0x10000000 bus-faults (verified on the nano-f407 /
-  dev1-f407 — `BFSR.IBUSERR`, HFSR=0x40000000). CCM is **data-only**; code
-  that must execute belongs in flash or SRAM. (`nano-f411` has no
-  `ccm_probe` app because the failure is a chip-family design trait.)
+  split on the F411. `coremark_sram` executes the timed CoreMark kernel from
+  its base (copied in from flash at startup), isolating CPU+SRAM throughput
+  from the ART-cached flash.
 
 ## ADC internal channels (blink_hello)
 
-The internal channels of the **ADC1** peripheral, which differ from the F407:
+The internal channels of the **ADC1** peripheral:
 
 | Channel | What it is |
 | ------- | ---------- |
 | **ADC1_IN17** | VREFINT (internal reference, ~1.21 V) |
 | **ADC1_IN18** | Temperature sensor **or** VBAT (shared input) |
 
-> On F411 the temperature sensor and VBAT are **both** on IN18. The
-> `TSVREFE` / `VBATE` bits in `ADC1->CCR` pick which path is connected (mutually
-> exclusive), and the temp sensor also gates VREFINT — so VBAT gets a second,
-> separate conversion pass. VBAT is measured through a **1/4 internal divider**
-> on F411 (F407 used /2). VREFINT is used to back out the supply voltage, which
-> then scales the temperature and VBAT readings.
+> The temperature sensor and VBAT are **both** on IN18. The `TSVREFE` / `VBATE`
+> bits in `ADC1->CCR` pick which path is connected (mutually exclusive), and the
+> temp sensor also gates VREFINT — so VBAT gets a second, separate conversion
+> pass. VBAT is measured through an internal 1/4 divider. VREFINT is used to
+> back out the supply voltage, which then scales the temperature and VBAT
+> readings.
 
 Example output (once per second):
 
 ```
-ADC1: temp=1000 code, VREFINT=1504 code, VBAT=790 code
-     Vdda ~= 3296 mV, chip temp ~= 44 C, VBAT ~= 2542 mV
+ADC1: temp=947 code, VREFINT=1498 code, VBAT=991 code
+     Vdda ~= 3308 mV, chip temp ~= 30 C, VBAT ~= 3200 mV
 ```
 
 ## Clock tree (100 MHz)

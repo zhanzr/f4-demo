@@ -18,7 +18,7 @@ set(STM32F4_HAL_ROOT
 
 set(BOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/../board)
 # Linker script. Default is the board's standard one; a project may point this
-# at its own script (e.g. to run benchmark code from a RAM/CCM region) by
+# at its own script (e.g. to run benchmark code from a RAM region) by
 # setting BOARD_LINKER_SCRIPT before including this file.
 if(NOT BOARD_LINKER_SCRIPT)
     set(BOARD_LINKER_SCRIPT ${BOARD_DIR}/stm32f411ceu6.ld)

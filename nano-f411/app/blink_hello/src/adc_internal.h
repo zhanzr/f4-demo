@@ -6,7 +6,7 @@
   *   - ADC1_IN18  temperature sensor (pass A) / VBAT (pass B)  - shared input
   *   - ADC1_IN17  VREFINT (internal reference voltage, ~1.21 V)
   *
-  * Unlike the F407, the F411 temp sensor and VBAT share IN18, so they are
+  * The F411 temp sensor and VBAT share IN18, so they are
   * converted in two passes selected by TSVREFE / VBATE in ADC1->CCR (mutually
   * exclusive). VREFINT is only valid while TSVREFE is set.
   */

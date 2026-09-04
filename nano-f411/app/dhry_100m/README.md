@@ -8,22 +8,20 @@ selected at configure time.
 
 ## Results
 
-> To be measured on hardware (100 MHz, hard-float). Measure by capturing the
-> console while `probe-rs reset` restarts the benchmark and averaging the
-> reported Dhrystones/s. (Reference — F407 @ 168 MHz: GCC 355,082 Dhrystones/s
-> = 1.203 DMIPS/MHz.)
+Measured on hardware at 100 MHz (hard-float): capture the console while the
+chip runs the benchmark (it re-runs every ~19 s), and take the last complete
+`Dhrystones per Second` line.
 
-| Toolchain    | Flags                                    | Dhrystones/s (to be measured) | DMIPS/MHz |
-| ------------ | ---------------------------------------- | ----------------------------- | --------- |
-| GCC | `-Ofast -ffp-contract=fast -funroll-loops` | — | — |
-| ARMCLANG (Keil AC6) | `-Omax` | — | — |
+| Toolchain    | Flags                                    | Dhrystones/s | DMIPS/MHz |
+| ------------ | ---------------------------------------- | ------------ | --------- |
+| GCC | `-Ofast -ffp-contract=fast -funroll-loops` | **235,211** | **1.339** |
+| ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | **251,193** | **1.430** |
 
-All runs are expected to print correct final values (Int_Glob=5,
-Arr_2_Glob = runs+10, …).
+All runs print correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
 
 > ⚠ **Do not use LTO for Dhrystone.** GCC `-flto` sees the whole program and
 > hoists the loop-invariant work out of the timed loop, inflating the score
-> ~2.2× (to 770,713 Dhrystones/s on the F407) while still passing the
+> ~2.1× (to 494,927 Dhrystones/s on this board) while still passing the
 > final-value check. The LTO number is meaningless and is **excluded from the
 > comparison above**. Full explanation and reproduction:
 > **`LTO_on_dhrystone.md`** in this folder.

@@ -3,7 +3,7 @@
 **Short version:** Dhrystone is trivially vulnerable to whole-program
 optimization. With GCC `-flto` the compiler sees the entire benchmark at once,
 hoists the (loop-invariant) work out of the timed loop, and the score jumps
-~2.2× — 770,713 vs 351,370 Dhrystones/s on this board. The result still *looks*
+~2.1× — 494,927 vs 235,211 Dhrystones/s on this board. The result still *looks*
 correct (the hoisted code still runs once, so the final values match), which is
 exactly why this number must never be quoted. This is a **known, documented
 weakness of Dhrystone itself**, not a bug in our toolchain or setup.
@@ -43,21 +43,18 @@ The timed region shrinks to a skeleton that re-checks a couple of values per
 iteration. The remaining (hoisted) code still executes — once — so the printed
 `Int_Glob`, `Arr_2_Glob`, etc. are still correct and the built-in check passes.
 
-## Measured evidence (nano-f407, STM32F407VET6 @ 168 MHz, `-Ofast`)
-
-The mechanism and numbers below are board-independent; re-running on the
-nano-f411 simply scales the same effect.
+## Measured evidence (nano-f411, STM32F411CEU6 @ 100 MHz, `-Ofast`)
 
 | Build                | Flags                                     | µs/run | Dhrystones/s | DMIPS/MHz |
 | -------------------- | ----------------------------------------- | ------ | ------------ | --------- |
-| GCC 15.3.1           | `-Ofast -ffp-contract=fast -funroll-loops` | 2.85  | 351,370     | 1.190     |
-| GCC 15.3.1 + LTO     | above `+ -flto`                            | 1.30  | 770,713     | 2.611 ⚠   |
-| armclang 6.24 (AC6)  | `-Ofast -ffp-contract=fast -funroll-loops` | 2.54  | 393,391     | 1.333     |
+| GCC 15.3.1           | `-Ofast -ffp-contract=fast -funroll-loops` | 4.252 | 235,211     | 1.339     |
+| GCC 15.3.1 + LTO     | above `+ -flto`                            | 2.021  | 494,927     | 2.817 ⚠   |
+| armclang 6.24 (AC6)  | `-Ofast -ffp-contract=fast -funroll-loops` | 3.981  | 251,193     | 1.430     |
 
-- Non-LTO GCC and armclang agree with each other within ~12 % — consistent,
+- Non-LTO GCC and armclang agree with each other within ~7 % — consistent,
   meaningful numbers.
-- The LTO build runs **2.2× faster per iteration** with identical final
-  values. Per-run time drops from 2.85 µs to 1.30 µs; the "extra" 1.55 µs of
+- The LTO build runs **2.1× faster per iteration** with identical final
+  values. Per-run time drops from 4.252 µs to 2.021 µs; the "extra" 2.23 µs of
   work was simply moved out of the timed region.
 - This is the same mechanism reported elsewhere: a public aarch64 example
   shows Dhrystone inflating from 5.2 M to 19.5 M Dhrystones/s (~3.7×) with
@@ -89,9 +86,10 @@ benchmark's own ecosystem:
 CoreMark's timed section is CRC-protected on every run. If the compiler
 hoisted or skipped the list/matrix/state-machine work, the printed
 `crcfinal` would change — the benchmark would *fail* validation, not silently
-inflate. In this repo GCC+LTO CoreMark (426.6 vs 427.7 iterations/s, ~0.3 %)
-confirms LTO adds nothing measurable to CoreMark, consistent with the
-StackOverflow observation that CoreMark is insensitive to LTO.
+inflate. On this board GCC+LTO CoreMark measures 270.51 vs 267.78
+iterations/s (+1.0 %), confirming LTO adds nothing measurable to CoreMark,
+consistent with the StackOverflow observation that CoreMark is insensitive
+to LTO.
 
 ## Rules for using this repo's numbers
 

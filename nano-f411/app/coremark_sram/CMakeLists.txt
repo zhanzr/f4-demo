@@ -3,9 +3,8 @@
 # The benchmark core (core_*.c) is linked into SRAM via a project linker
 # script and copy-in'd from flash at startup; harness/HAL/printf stay in flash.
 # Timed with SysTick (HAL_GetTick, 1 kHz).
-# The F411 has a single 128 KB SRAM block (no SRAM1/SRAM2 split like the F407);
-# executing the kernel from plain SRAM (no ART I-cache) is the motivation for
-# this run -- see README.
+# The F411 has a single 128 KB SRAM block; executing the kernel from plain
+# SRAM (no ART I-cache) is the motivation for this run -- see README.
 #
 # Pico-style workflow (gcc default; armclang / starm-clang for alternate CCs):
 #   mkdir -p build && cd build

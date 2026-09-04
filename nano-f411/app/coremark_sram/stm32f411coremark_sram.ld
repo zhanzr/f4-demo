@@ -4,16 +4,13 @@
  *   FLASH  : 512 KB @ 0x08000000   - vector table, newlib/HAL/harness code
  *   RAM    : 128 KB @ 0x20000000   - .ram_code: the timed CoreMark core (base),
  *                                    then .data/.bss, heap, stack
- *   CCM    : 128 KB @ 0x10000000   - unused (not even fetched on the D-bus
- *                                    instruction path, so unusable here)
  *
  * The benchmark kernel (core_*.c) is placed in RAM (via .ram_code at the RAM
  * base, copy-in'd from flash at startup by Reset_Handler) so the timed loops
  * execute from SRAM instead of flash. The F411 has one contiguous 128 KB SRAM
- * block (no SRAM1/SRAM2 split like the F407), so the kernel goes at its base.
- * The reference point is the F407 measurement: running the kernel from SRAM
- * instead of the ART-cached flash is measurably slower, which is exactly the
- * exercise here - CoreMark executes from plain SRAM with no ART acceleration.
+ * block, so the kernel goes at its base: CoreMark executes from plain SRAM
+ * with no ART acceleration — measurably slower than the ART-cached flash run
+ * (see README).
  *
  * Symbols consumed by startup_stm32f411xx.s: _estack, _sidata, _sdata, _edata,
  *   _sbss, _ebss (existing) plus _sram_code/_eram_code/_sram_code_idata for the

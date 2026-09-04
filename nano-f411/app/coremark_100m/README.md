@@ -10,22 +10,20 @@ works identically on all three compilers.
 
 ## Results
 
-> To be measured on hardware (100 MHz, hard-float). The table below mirrors the
-> nano-f407 board's 168 MHz runs for reference; fill in the F411 numbers by
-> capturing the console while `probe-rs reset` restarts the benchmark
-> (see "Measuring" below).
+Measured on hardware at 100 MHz (hard-float): capture the console while the
+chip runs the benchmark (it re-runs every ~47 s), and take the last complete
+`Iterations/Sec` line (earlier lines can be stale bytes from the previous
+firmware still draining from the ST-Link VCP buffer).
 
-| Toolchain | Flags | iterations/s (to be measured) | validation |
-| --------- | ------| ----------------------------- | ---------- |
-| GCC | `-Ofast -ffp-contract=fast -funroll-loops` | — | — |
-| ARMCLANG (Keil AC6) | `-Omax` | — | — |
-| ST Arm clang | `-Ofast` | — | — |
+| Toolchain | Flags | iterations/s | Time (s) | validation |
+| --------- | ------| ------------ | -------- | ---------- |
+| GCC | `-Ofast -ffp-contract=fast -funroll-loops` | **267.78** | 37.34 | `Correct operation validated`, crcfinal `0x988c` |
+| ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | **288.73** | 34.63 | `Correct operation validated`, crcfinal `0x988c` |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | **253.68** | 39.42 | `Correct operation validated`, crcfinal `0x988c` |
 
-All runs are expected to print `Correct operation validated` with the same CRC
-(crcfinal `0x988c`). (Reference — F407 @ 168 MHz: GCC 427.7 it/s in 23.38 s;
-GCC `-flto` gave 426.6 it/s, ~0.3 % noise, because CoreMark's per-run CRC
-forces the work to execute, so LTO cannot cheat it the way it cheats
-Dhrystone — see `dhry_100m/LTO_on_dhrystone.md`.)
+All runs share the same CRC (`crcfinal 0x988c`). Note CoreMark's per-run CRC
+forces the work to execute, so **LTO does not inflate it** the way it cheats
+Dhrystone — see `dhry_100m/LTO_on_dhrystone.md`.
 
 ## Build
 
@@ -60,12 +58,12 @@ cached after configure.
 CoreMark prints iterations/s and the CRC on the last line, e.g.:
 
 ```
-Total time (secs) = 23.380000
-Iterations/Sec   = 427.715997
-Iterations/Sec   = 427.715997
+Total time (secs) = 37.343000
+Iterations/Sec   = 267.780634
+Iterations/Sec   = 267.780634
 ```
 
 The serial console and the capture recipe are described in the board-level
-`../../README.md`. Reading 30–60 s of console while `probe-rs reset` restarts
-the benchmark, then averaging the `Iterations/Sec` lines, is how the (future)
-numbers above should be produced.
+`../../README.md`. The numbers above were produced by flashing the build,
+reading the console for ~45 s, and taking the last complete run (the firmware
+re-runs the benchmark every ~47 s).

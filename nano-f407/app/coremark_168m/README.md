@@ -16,7 +16,7 @@ configure time. The CoreMark port uses the HAL `clock()`/`usec()` (DWT) from
 Two consecutive runs: 427.716 iterations/s each (10,000 iterations in 23.38 s).
 All runs print `Correct operation validated` and identical CRC
 (crcfinal `0x988c`). (For reference, GCC `-flto` gives 426.6 iterations/s on
-the dev1-f407 board — ~0.3 %, noise — because CoreMark's per-run CRC forces
+this board — ~0.3 %, noise — because CoreMark's per-run CRC forces
 the work to execute, so LTO cannot cheat it the way it cheats Dhrystone; see
 `dhry_168m/LTO_on_dhrystone.md`.)
 

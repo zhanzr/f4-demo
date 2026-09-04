@@ -6,8 +6,8 @@
   * PCLK2/4 = 12.5 MHz (within the 36 MHz max for F411). 480-cycle sample time
   * = 38.4 us (the F4 temp sensor needs a long sample, datasheet min ~10 us).
   *
-  * F411 note: unlike the F407, the temperature sensor and VBAT share a single
-  * ADC input (IN18), selected by the TSVREFE / VBATE bits in ADC1->CCR. Only
+  * F411 note: the temperature sensor and VBAT share a single ADC input (IN18),
+  * selected by the TSVREFE / VBATE bits in ADC1->CCR. Only
   * one of the two paths may be active at a time, and the temp sensor also
   * enables VREFINT - which is why VBAT gets its own conversion pass (rank 2,
   * VREFINT, returns no valid data in that pass and is discarded).
