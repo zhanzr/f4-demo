@@ -64,3 +64,20 @@ void SendData(uint32_t color)
     SendDataSPI((uint8_t)color);
     LCD_CS_SET;
 }
+
+/* Fast raw 8-bit data byte: no CS/DC toggling (caller manages both). */
+void LCD_WriteDataFast(uint8_t data)
+{
+    SendDataSPI(data);
+}
+
+/* Begin/end a data-gram burst for raster fills: DC high, CS held low. */
+void LCD_BeginData(void)
+{
+    LCD_CS_CLR;
+    LCD_RS_SET;
+}
+void LCD_EndData(void)
+{
+    LCD_CS_SET;
+}

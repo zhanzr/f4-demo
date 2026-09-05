@@ -19,5 +19,8 @@ void CS_CLR(void);
 void WriteComm(uint16_t data);
 void WriteData(uint16_t data);
 void SendData(uint32_t color);
+void LCD_WriteDataFast(uint8_t data);   /* raw byte, caller manages CS/DC */
+void LCD_BeginData(void);                /* DC high, CS low, for raster bursts */
+void LCD_EndData(void);                  /* CS high after a burst */
 
 #endif /* __INTERFACE_H */

@@ -26,6 +26,7 @@ add_executable(${PROJECT_NAME}.elf
     src/main.c
     src/interface.c
     src/lcd.c
+    src/lcd/lcd_fonts.c
     src/backlight.c
 )
 

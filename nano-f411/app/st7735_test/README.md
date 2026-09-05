@@ -20,15 +20,25 @@ to 3.3 V):
 
 ## What it does
 
-Repeats the vendor `TEST_STAND` loop (500 ms between screens):
-window-border **frame**, **16-level gray** horizontal bars, **color bands**
-(red/red/green/green/blue/blue/white/white), then full **red, green, blue,
-white, black** fills. The init sequence (frame rate / power / gamma /
-MADCTL `0xC8`, 65k mode) matches the vendor `001_006_ST7735S_1.44_0xC8.h`
-verbatim.
+Two demo sets loop forever:
 
-The F411 runs at 100 MHz (vs the vendor's 72 MHz F103), so the bit-banged SPI
-and PWM are only lightly loaded.
+1. **Vendor `TEST_STAND`** (500 ms between screens): window-border **frame**,
+   **16-level gray** horizontal bars, **color bands**
+   (red/red/green/green/blue/blue/white/white), then full **red, green, blue,
+   white, black** fills. The init sequence (frame rate / power / gamma /
+   MADCTL `0xC8`, 65k mode) matches the vendor `001_006_ST7735S_1.44_0xC8.h`
+   verbatim.
+2. **Animated patterns ported from the h723-mini `st7789` example**
+   (adapted 240×240 → 128×128):
+   - **floating & bouncing shapes** — 8 filled squares / circles / triangles
+     bouncing off the walls (~5 s),
+   - **pure colors** — RED..BLACK, ~2 s each,
+   - **gradient** — animated HSV hue sweep across the full color wheel (~5 s),
+   - **LED test** — board LED PC13 on/off,
+   all with a **live FPS counter** drawn transparently in the bottom band.
+
+The F411 runs at 100 MHz (vs the vendor's 72 MHz F103); the FPS counter shows
+the real throughput of the bit-banged bus (~a few frames/s on the gradient).
 
 ## Backlight PWM
 
@@ -49,8 +59,9 @@ prints once at boot. The screens run continuously in `while(1)`.
 
 ## Files
 
-- `src/main.c` — vendor-style test loop
-- `src/lcd.c` / `lcd.h` — driver + vendor demo screens + init sequence
-- `src/interface.c` / `interface.h` — bit-banged 4-wire SPI primitives
+- `src/main.c` — vendor-style TEST_STAND + st7789-style animated patterns (shapes/colors/gradient/LED) with an FPS counter
+- `src/lcd.c` / `lcd.h` — driver + vendor demo screens + 24-bit color API, text, lines/rects/circles/fills and `LCD_CopyBuffer`
+- `src/lcd/lcd_fonts.c` / `lcd_fonts.h` — ASCII 6x12 font (from the h723 st7789 example)
+- `src/interface.c` / `interface.h` — bit-banged 4-wire SPI primitives (+ fast raster burst helpers)
 - `src/blockwrite/blockwrite.h` — pixel-window helper
 - `src/backlight.c` / `backlight.h` — PB9/TIM4_CH4 PWM
