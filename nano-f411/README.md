@@ -29,6 +29,7 @@ Hardware photos: `board_images/` (`board_1.jpg`, `board_2.jpg`, `board_3.jpg`).
 | Project              | What it does |
 | -------------------- | ------------ |
 | `app/blink_hello`    | Blinks the PC13 LED + samples the **ADC1 internal channels** (temperature/VREFINT/VBAT on the shared IN18 input) and prints them |
+| `app/st7735_test`    | **ST7735S 1.44" 128x128** LCD (MD144) via bit-banged 4-wire SPI (SCL=PA5 SDA=PA6 RES=PA7 DC=PA4 CS=PB8), vendor `C8T6_md144_t1` demo loop; backlight **BL=PB9 TIM4_CH4 ~20% PWM** |
 | `app/dhry_100m`      | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_100m`  | CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang **or** starm-clang, `-Ofast`-class flags |
 | `app/coremark_sram`  | CoreMark with the timed kernel linked into **SRAM** (0x20000000) and copy-in'd at startup; SysTick timing |
