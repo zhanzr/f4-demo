@@ -39,15 +39,15 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
 
 - `bare/blink_hello` — LED blink + ADC internal-channel demo (LEDs blink one
   by one; prints the 180 MHz clock and VREFINT / temperature / VBAT over USART1).
-- `bare/dhry_180m` — Dhrystone 2.1, 2,000,000 runs (GCC **or** armclang).
-  Measured GCC: **391,236 Dhrystones/s, 1.237 DMIPS/MHz**; armclang
-  **445,434 / 1.408**. See its README.
-- `bare/coremark_180m` — CoreMark 1.0.1, 10,000 iterations (GCC **or**
-  armclang). Measured GCC: **495.32 iterations/s**, armclang `-Omax`
-  **599.20**; crcfinal `0x988c`. See its README.
+- `bare/dhry_180m` — Dhrystone 2.1, 2,000,000 runs (GCC, armclang **or**
+  starm-clang). Measured GCC: **391,236 Dhrystones/s, 1.237 DMIPS/MHz**;
+  armclang **445,434 / 1.408**; starm-clang **444,346 / 1.405**. See its README.
+- `bare/coremark_180m` — CoreMark 1.0.1, 10,000 iterations (GCC, armclang **or**
+  starm-clang). Measured GCC: **495.32 iterations/s**, armclang `-Omax`
+  **599.20**, starm-clang **448.01**; crcfinal `0x988c`. See its README.
 - `bare/coremark_sram` — CoreMark with the timed kernel in **SRAM1**
   (0x20000000); SRAM1 beats SRAM3 ~1.51×, so only SRAM1 is kept. Measured
-  gcc 382.57 / armclang `-Omax` 450.05 it/s. See its README.
+  gcc 382.57 / armclang `-Omax` 450.05 / starm-clang 339.03 it/s. See its README.
 - `app/board_hello` — board self-test (renamed from `app/blink_hello`): LED
   blink + ADC internal channels (VREFINT / temperature / VBAT), GL5516 light
   sensor on PA4 (raw code + mV), DHT11 on PE2, MPU6050 6-axis on I2C1
@@ -55,12 +55,13 @@ family), built with **CMake/Ninja** (Pico-style), debugged/flashed over
   `SystemInit()` initializes SDRAM through the HAL before the C runtime
   copies `.data` and clears `.bss`. Verified on hardware. See its README.
 - `app/dhry_180m` — Dhrystone with runtime data in SDRAM. Measured GCC:
-  **174,611 Dhrystones/s, 0.552 DMIPS/MHz**.
+  **174,611 Dhrystones/s, 0.552 DMIPS/MHz**; starm-clang 213,061 / 0.674.
 - `app/coremark_180m` — CoreMark with runtime data in SDRAM. Measured GCC:
-  **194.39 iterations/s** (armclang `-Omax` 231.59), crcfinal `0x988c`.
+  **194.39 iterations/s** (armclang `-Omax` 231.59, starm-clang 196.75),
+  crcfinal `0x988c`.
 - `app/coremark_sram` — CoreMark with the timed kernel in **SRAM1** and
   runtime data in SDRAM (mixed-memory case). Measured GCC **168.57** / armclang
-  `-Omax` **200.45** it/s, crcfinal `0x988c`.
+  `-Omax` **200.45** / starm-clang **168.10** it/s, crcfinal `0x988c`.
 - `bare/spi_flash_test` and `app/spi_flash_test` — W25Q128FVSG erase/program/read
   comparison using internal-SRAM versus SDRAM-resident buffers. Both report
   JEDEC `0xEF4018` and pass verification; see their READMEs for measurements.
@@ -110,6 +111,16 @@ Use the shared board layer in the project's `CMakeLists.txt`:
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f429_board.cmake)
 stm32f429_apply_board(${PROJECT_NAME}.elf "-O1")
 ```
+
+The benchmark projects select a compiler with
+`-DSTM32_TOOLCHAIN=gcc|armclang|starm-clang` at configure time (gcc default;
+armclang = Keil AC6 C + GNU as/ld; starm-clang = ST LLVM 21 + LLD). The
+benchmarks also expose `-DBENCH_OPT="..."` / `-DBENCH_OPT_C="..."` (C-only
+flags) for the aggressive tuning recipes documented in each README.
+
+> **Flashing starm-clang builds:** its `.hex` passes probe-rs/pyOCD verify, but
+> OpenOCD's checksum-verify rejects it intermittently — use `ninja flash-probe`
+> or `ninja flash-pyocd` for starm-clang builds.
 
 For a bare-metal project, omit `DATA_IN_ExtSDRAM` and use the default linker
 script `board/stm32f429igt6.ld`; `.data`, `.bss`, and heap stay in internal

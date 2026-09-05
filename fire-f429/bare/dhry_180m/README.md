@@ -12,6 +12,7 @@ build with either **GNU arm-none-eabi-gcc** or **Keil Arm Compiler 6
 | ------------ | ------------------------------------------ | ------------ | --------- |
 | GCC 15.3.1   | `-Ofast -ffp-contract=fast -funroll-loops` | 391,236      | 1.237     |
 | ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | **445,434** | **1.408** |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 444,346      | 1.405     |
 
 Per toolchain, only the highest measured configuration is shown (armclang
 `-Omax` measures the same 445,434 as `-Ofast` — applying the nano-f411

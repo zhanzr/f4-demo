@@ -15,6 +15,7 @@ Measured on hardware, 180 MHz, 10,000 iterations, SysTick timing:
 | Bare, `-Omax` (armclang) | `-Omax -fno-lto` | **599.20** | OK (`0x988c`) |
 | SDRAM app, gcc default | `-Ofast -ffp-contract=fast -funroll-all-loops` | **194.39** | OK (`0x988c`) |
 | SDRAM app, `-Omax` (armclang) | `-Omax -fno-lto` | **231.59** | OK (`0x988c`) |
+| SDRAM app, ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 196.75 | OK (`0x988c`) |
 
 The SDRAM figures are ~60% lower than the internal-SRAM ones, while the
 matching CRC confirms the workload completed correctly. CoreMark's working

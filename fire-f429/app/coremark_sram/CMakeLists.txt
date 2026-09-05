@@ -8,16 +8,19 @@ if(POLICY CMP0123)
 endif()
 
 # Toolchain selection. gcc (default) = GNU arm-none-eabi end-to-end;
-# armclang = Keil Arm Compiler 6 C + GNU as/ld. Must be set before project().
-set(STM32_TOOLCHAIN "gcc" CACHE STRING "C compiler: gcc (arm-none-eabi, default) or armclang (Keil AC6)")
-set_property(CACHE STM32_TOOLCHAIN PROPERTY STRINGS gcc armclang)
-option(STM32_LTO "Enable -flto with the GCC toolchain" OFF)
+# armclang = Keil Arm Compiler 6 C + GNU as/ld;
+# starm-clang = ST LLVM 21 C + LLD (supports full LLVM LTO).
+set(STM32_TOOLCHAIN "gcc" CACHE STRING "C compiler: gcc (default), armclang (Keil AC6), or starm-clang (ST LLVM)")
+set_property(CACHE STM32_TOOLCHAIN PROPERTY STRINGS gcc armclang starm-clang)
+option(STM32_LTO "Enable LTO (gcc or starm-clang only)" OFF)
 
 if(NOT CMAKE_TOOLCHAIN_FILE)
-    if(STM32_TOOLCHAIN STREQUAL "armclang")
+    if(STM32_TOOLCHAIN STREQUAL "gcc")
+        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/arm-none-eabi-toolchain.cmake")
+    elseif(STM32_TOOLCHAIN STREQUAL "armclang")
         set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/armclang-keil-toolchain.cmake")
     else()
-        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/arm-none-eabi-toolchain.cmake")
+        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/starm-clang-toolchain.cmake")
     endif()
 endif()
 

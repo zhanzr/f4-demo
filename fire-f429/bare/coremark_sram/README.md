@@ -28,6 +28,7 @@ instruction fetch).
 | --------- | ----- | ---------------------- | -------- | -------------- |
 | GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **382.57** | 26.14 | 0x988c |
 | ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **450.05** | 22.22 | 0x988c |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 339.03 | 29.50 | 0x988c |
 
 Per toolchain, only the highest measured configuration is shown (the kernel
 was confirmed in SRAM1 via the link map for every row). All runs print

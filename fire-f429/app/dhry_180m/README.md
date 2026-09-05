@@ -13,9 +13,11 @@ Measured on hardware with GCC 15.3.1, 180 MHz, no LTO:
 | ----- | ----- | ------------ | --------- |
 | Bare, internal SRAM | `-Ofast -ffp-contract=fast -funroll-loops` | 391,236 | 1.237 |
 | Bare, armclang | `-Ofast -ffp-contract=fast -funroll-loops` | 445,434 | 1.408 |
+| Bare, ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 444,346 | 1.405 |
 | SDRAM app | `-Ofast -ffp-contract=fast -funroll-loops` (gcc) | 174,611 | 0.552 |
+| SDRAM app, ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 213,061 | 0.674 |
 
-The SDRAM result is about 55.4% lower than the internal-SRAM result. The
+The SDRAM results are about 55-52% lower than the internal-SRAM results. The
 benchmark still passes all final-value checks; the reduction is the expected
 cost of placing its frequently accessed globals and heap in external SDRAM.
 

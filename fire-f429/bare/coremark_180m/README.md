@@ -3,9 +3,9 @@
 CoreMark 1.0.1 (EEMBC, `coremark_1_0_1/`), **10,000 iterations**, on the
 **fire-f429** board (STM32F429IGT6, bare metal) at **180 MHz** (HSE 25 MHz →
 PLL M=25 N=360 P=2 → SYSCLK). Compiler-agnostic: the same sources build with
-**GNU arm-none-eabi-gcc** or **Keil Arm Compiler 6 (armclang)**, selected at
-configure time. The CoreMark port uses the HAL's SysTick 1 kHz tick
-(`HAL_GetTick()`).
+**GNU arm-none-eabi-gcc**, **Keil Arm Compiler 6 (armclang)** or **ST Arm
+clang** (starm-clang), selected at configure time. The CoreMark port uses the
+HAL's SysTick 1 kHz tick (`HAL_GetTick()`).
 
 ## Results
 
@@ -19,6 +19,7 @@ from the console adapter's buffer).
 | GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **495.32** | 20.19 |
 | GCC + LTO | default `+ -DSTM32_LTO=ON` | 490.70 | 20.38 |
 | ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **599.20** | 16.69 |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 448.01 | 22.32 |
 
 Per toolchain, only the highest measured configuration is shown. All runs
 print `Correct operation validated` with an identical CRC (crcfinal `0x988c`).
@@ -40,10 +41,13 @@ Highest measured score per toolchain (see Results):
   use; Keil MDK links them directly with armlink).
 - **GCC:** `-Ofast -ffp-contract=fast -funroll-all-loops` (default) →
   495.32 it/s. `-DSTM32_LTO=ON` is unchanged (490.70).
+- **ST Arm clang:** `-Ofast -ffp-contract=fast -funroll-loops` (default) →
+  448.01 it/s.
 
 ```bash
 cmake -G Ninja -DSTM32_TOOLCHAIN=armclang '-DBENCH_OPT=' '-DBENCH_OPT_C=-Omax -fno-lto' ..
 cmake -G Ninja -DSTM32_TOOLCHAIN=gcc ..
+cmake -G Ninja -DSTM32_TOOLCHAIN=starm-clang ..
 ```
 
 ## Build

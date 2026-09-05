@@ -51,9 +51,10 @@ iteration. The remaining (hoisted) code still executes — once — so the print
 | GCC 15.3.1           | `-Ofast -ffp-contract=fast -funroll-loops` | 2.85  | 351,370     | 1.190     |
 | GCC 15.3.1 + LTO     | above `+ -flto`                            | 1.30  | 770,713     | 2.611 ⚠   |
 | armclang 6.24 (AC6)  | `-Ofast -ffp-contract=fast -funroll-loops` | 2.54  | 393,391     | 1.333     |
+| ST Arm clang (LLVM 21.1.1) | `-Ofast -ffp-contract=fast -funroll-loops` | 2.51  | 398,963     | 1.352     |
 
-- Non-LTO GCC and armclang agree with each other within ~12 % — consistent,
-  meaningful numbers.
+- Non-LTO GCC, armclang and ST Arm clang agree with each other within ~12 % —
+  consistent, meaningful numbers.
 - The LTO build runs **2.2× faster per iteration** with identical final
   values. Per-run time drops from 2.85 µs to 1.30 µs; the "extra" 1.55 µs of
   work was simply moved out of the timed region.
