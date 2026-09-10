@@ -43,6 +43,10 @@ HSE, same 180 MHz clock tree) with a different pinout.
   (0x20000000). See its README.
 - `bare/ee_flash_test` — AT24C02 EEPROM erase/program/read test over **I2C2**
   (PH4/PH5). See its README.
+- `bare/sdram_test` — runtime FMC test of the onboard **W9825G6KH** SDRAM:
+  **32 MiB**, 16-bit, bank 1 at `0xC0000000` (13-bit rows A0-A12), no linker
+  remapping. Measured: write 14.039 MiB/s, read 5.010 MiB/s, **PASS**. See its
+  README.
 
 > Migration note: these five projects were migrated from `fire-f429` (same
 > MCU, same clock tree). Adapted: LEDs PH10-12/PD12 → **PB1 (LED0) / PB0 (LED1)**, and the
