@@ -51,6 +51,12 @@ HSE, same 180 MHz clock tree) with a different pinout.
   flash (512 MB, bank 3 `0x80000000`, NCE3=PG9, R/B=PD6): erase/write/read
   verify loop. Measured **PASS**; write 6,350 / read 9,194 KB/s. (fire-f429
   has **no** NAND.) See its README.
+- `bare/lcd_touch_test` — 2.8" TFT **ILI9341** (ID `0x9341`) on the 16-bit
+  **FMC NOR/SRAM parallel bus** (bank 1 NE1, A18=RS), backlight PB5; vendor
+  TFTLCD color loop + st7789_md169 test patterns (info / TEST_STAND /
+  gradient / LED / FPS) and the full vendored ALIENTEK touch stack
+  (GT9147/FT5206/OTT2001A + XPT2046-style resistive + AT24C02 calibration),
+  touch active on every page. See its README.
 
 > Migration note: these five projects were migrated from `fire-f429` (same
 > MCU, same clock tree). Adapted: LEDs PH10-12/PD12 → **PB1 (LED0) / PB0 (LED1)**, and the
@@ -59,13 +65,16 @@ HSE, same 180 MHz clock tree) with a different pinout.
 
 ## Projects (`app/`) — two-stage NAND boot
 
-- `app/` — stage-1 bootloader (internal flash) + stage-2 app (SDRAM @
-  `0xC0000000`). The bootloader loads the app image from the on-board NAND and
-  **executes it from SDRAM** (NAND is not XIP-able on the F4; SDRAM doubles as
-  code space + volatile memory). The stage-2 app is `bare/blink_hello`
-  migrated, printing `&main` / `&app_bss_probe` to prove the remap. A custom
-  probe-rs FMC-NAND flash algorithm (`app/algo/`) programs the NAND, mirroring
-  h723-mini's `tool/qspi_map`. See `app/README.md`.
+- `app/blink_hello` — stage-2 `bare/blink_hello` migrated: runs entirely from
+  **SDRAM at `0xC0000000`**, prints `&main` / `&app_bss_probe` to prove the
+  NAND→SDRAM remap.
+- `app/lcd_touch_test` — stage-2 2.8" TFT LCD + touch app (reuses the
+  `bare/lcd_touch_test` driver sources), running from SDRAM.
+- `tool/boot` — stage-1 bootloader (internal flash): inits clocks/UART/SDRAM/
+  NAND, copies the app from NAND into SDRAM, validates SP + reset vector, and
+  jumps (MPU makes the SDRAM XN region executable). `tool/nand_flash_algo` — the
+  custom probe-rs FMC-NAND flash algorithm that `ninja flash` uses to write the
+  app into NAND. Mirrors h723-mini's `tool/qspi_map`. See `app/README.md`.
 
 ## Creating a project
 
