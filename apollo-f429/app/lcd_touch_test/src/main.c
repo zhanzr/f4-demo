@@ -23,6 +23,7 @@
 #include "board.h"
 #include "adc_internal.h"
 #include "dht11.h"
+#include "pcf8574.h"
 #include "lcd.h"
 #include "touch.h"
 
@@ -225,6 +226,9 @@ static void info_page(uint8_t invert)
     snprintf(buf, sizeof buf, "ADC die T %d C", die_c);
     LCD_DisplayString(20, 90, buf);
 
+    /* PB12 is shared: the PCF8574 INT holds it low. Release the expander
+     * interrupt first, otherwise the DHT11 line reads stuck-low. */
+    PCF8574_ReleaseINT();
     if (DHT11_Read(&dht) && dht.valid)
     {
         printf("[DHT11] T %d.%d C  RH %d.%d %%\r\n",
@@ -276,6 +280,7 @@ int main(void)
     printf("\r\n==== apollo-f429 stage-2 app: lcd_touch_test @ %lu MHz ====\r\n",
            (unsigned long)SystemCoreClock / 1000000UL);
     ADC_Internal_Init();
+    PCF8574_Init();              /* release shared PB12 (PCF8574 INT / DHT11) */
     DHT11_Init();
 
     LCD_Init();
