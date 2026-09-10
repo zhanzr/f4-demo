@@ -22,8 +22,8 @@ e_server/
     style.css
     app.js
   public/          images served to the page (embedded into web_assets.h)
-    f429_board_0.jpg
-    f429_board_v1.jpg
+    apollo_board_0.png
+    apollo_board_1.png
   build_web.py     bundle: inline CSS/JS -> gzip page -> C arrays (--out to reuse)
   web_assets.h     generated C arrays (page + images + lookup table)
   server.c         reference C backend (host-side)

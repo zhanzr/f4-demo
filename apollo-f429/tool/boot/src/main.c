@@ -26,7 +26,7 @@
 
 #define APP_BASE       0xC0000000UL
 #define APP_LIMIT      0xC0000000UL + 0x2000000UL   /* 32 MiB SDRAM window */
-#define APP_IMAGE_MAX  0x00080000UL                 /* hard safety cap: 512 KiB */
+#define APP_IMAGE_MAX  0x00100000UL                 /* hard safety cap: 1 MiB */
 #define APP_PAGES      (APP_IMAGE_MAX / 2048UL)
 /* Consecutive fully-erased (0xFF) NAND pages that mark the end of the image.
  * The app image is stored *raw* (no length header), so the bootloader finds

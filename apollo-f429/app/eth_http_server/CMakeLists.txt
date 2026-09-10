@@ -47,8 +47,8 @@ add_custom_command(OUTPUT ${WEB_ASSETS}
             ${E_SERVER}/web/index.html
             ${E_SERVER}/web/style.css
             ${E_SERVER}/web/app.js
-            ${E_SERVER}/public/f429_board_0.jpg
-            ${E_SERVER}/public/f429_board_v1.jpg
+            ${E_SERVER}/public/apollo_board_0.png
+            ${E_SERVER}/public/apollo_board_1.png
     COMMENT "Generating src/web_assets.h from e_server/web + e_server/public")
 
 add_executable(${PROJECT_NAME}.elf
