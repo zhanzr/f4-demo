@@ -21,7 +21,9 @@ extern "C" {
 #define HAL_GPIO_MODULE_ENABLED
 #define HAL_PWR_MODULE_ENABLED
 #define HAL_RCC_MODULE_ENABLED
+#define HAL_RCC_EX_MODULE_ENABLED
 #define HAL_UART_MODULE_ENABLED
+#define HAL_SAI_MODULE_ENABLED
 #define HAL_DMA_MODULE_ENABLED
 #define HAL_DMA2D_MODULE_ENABLED
 #define HAL_SDRAM_MODULE_ENABLED
@@ -72,6 +74,10 @@ void assert_failed(uint8_t *file, uint32_t line);
   #include "stm32f4xx_hal_rcc.h"
 #endif /* HAL_RCC_MODULE_ENABLED */
 
+#if defined(HAL_RCC_EX_MODULE_ENABLED)
+  #include "stm32f4xx_hal_rcc_ex.h"
+#endif /* HAL_RCC_EX_MODULE_ENABLED */
+
 #if defined(HAL_GPIO_MODULE_ENABLED)
   #include "stm32f4xx_hal_gpio.h"
 #endif /* HAL_GPIO_MODULE_ENABLED */
@@ -79,6 +85,10 @@ void assert_failed(uint8_t *file, uint32_t line);
 #if defined(HAL_DMA_MODULE_ENABLED)
   #include "stm32f4xx_hal_dma.h"
 #endif /* HAL_DMA_MODULE_ENABLED */
+
+#if defined(HAL_SAI_MODULE_ENABLED)
+  #include "stm32f4xx_hal_sai.h"
+#endif /* HAL_SAI_MODULE_ENABLED */
 
 #if defined(HAL_DMA2D_MODULE_ENABLED)
   #include "stm32f4xx_hal_dma2d.h"
