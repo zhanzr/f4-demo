@@ -1,0 +1,4 @@
+# Build artifacts from build_algo.py (the target YAML is committed/regenerated).
+flash.o
+flash.elf
+flash.bin

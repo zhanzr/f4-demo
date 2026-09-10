@@ -57,6 +57,16 @@ HSE, same 180 MHz clock tree) with a different pinout.
 > AT24C02 bus I2C1 (PB6/PB7) → **I2C2 (PH4/PH5)**. Console and clock are
 > identical to fire-f429.
 
+## Projects (`app/`) — two-stage NAND boot
+
+- `app/` — stage-1 bootloader (internal flash) + stage-2 app (SDRAM @
+  `0xC0000000`). The bootloader loads the app image from the on-board NAND and
+  **executes it from SDRAM** (NAND is not XIP-able on the F4; SDRAM doubles as
+  code space + volatile memory). The stage-2 app is `bare/blink_hello`
+  migrated, printing `&main` / `&app_bss_probe` to prove the remap. A custom
+  probe-rs FMC-NAND flash algorithm (`app/algo/`) programs the NAND, mirroring
+  h723-mini's `tool/qspi_map`. See `app/README.md`.
+
 ## Creating a project
 
 Use the shared board layer in the project's `CMakeLists.txt`:

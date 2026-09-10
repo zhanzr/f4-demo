@@ -16,6 +16,15 @@
 #include "swv_printf.h"
 
 /* ------------------------------------------------------------------------ */
+#ifdef NAND_APP
+/* Stage-2 (SDRAM/NAND-shimmed) apps: the bootloader owns the clock tree, so
+ * an empty SystemClock_Config keeps the identical main() callable without
+ * re-configuring RCC. Mirrors h723-mini's QSPI_APP guard. */
+void SystemClock_Config(void)
+{
+    /* no-op: the app/bootloader stage-1 already configured HSE -> 180 MHz */
+}
+#else
 void SystemClock_Config(void)
 {
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -48,6 +57,7 @@ void SystemClock_Config(void)
         Error_Handler();
     }
 }
+#endif /* NAND_APP */
 
 /* ------------------------------------------------------------------------ */
 static void GPIO_LED_Init(void)
@@ -85,6 +95,11 @@ static void GPIO_DHT11_Init(void)
 void Board_Init(void)
 {
     SystemClock_Config();
+#ifdef NAND_APP
+    /* The bootloader disables IRQs just before jumping to the app; re-enable
+     * them here so HAL_GetTick()/HAL_Delay() (SysTick IRQ) work. */
+    __enable_irq();
+#endif
     GPIO_LED_Init();
     GPIO_DHT11_Init();
     UART_Init();

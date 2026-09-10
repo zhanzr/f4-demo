@@ -26,6 +26,13 @@ if(NOT STM32_LINKER_SCRIPT)
     set(STM32_LINKER_SCRIPT ${BOARD_DIR}/stm32f429igt6.ld)
 endif()
 
+# System init source. Defaults to the board copy of system_stm32f4xx.c (owning
+# the clock tree - correct for a firmware that owns the clocks). A stage-2 app
+# booted by the app/ bootloader overrides this with a non-destructive
+# SystemInit (see app/app/src/system_app.c).
+set(STM32F429_SYSTEM_SOURCE ${BOARD_DIR}/system_stm32f4xx.c CACHE FILEPATH
+    "System init source for the STM32F429 build")
+
 function(stm32f429_apply_board TGT OPT)
     separate_arguments(OPT_LIST NATIVE_COMMAND "${OPT}")
 
@@ -47,7 +54,7 @@ function(stm32f429_apply_board TGT OPT)
         ${BOARD_DIR}/uart_printf.c
         ${BOARD_DIR}/syscalls.c
         ${BOARD_DIR}/startup_stm32f429xx.s
-        ${BOARD_DIR}/system_stm32f4xx.c
+        ${STM32F429_SYSTEM_SOURCE}
     )
     # A project (e.g. an RTOS app) may provide its own interrupt handlers and
     # skip the shared stm32f4xx_it.c (HAL SysTick) by setting STM32_SKIP_BOARD_IT.
