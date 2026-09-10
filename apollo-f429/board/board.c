@@ -56,14 +56,14 @@ static void GPIO_LED_Init(void)
 
     __HAL_RCC_GPIOB_CLK_ENABLE();
 
-    /* LEDs PB1 (LED1) + PB0 (LED2): push-pull, low = ON. Start OFF. */
+    /* LEDs PB1 (LED0) + PB0 (LED1): push-pull, low = ON. Start OFF. */
     GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
     GPIO_InitStruct.Pull  = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Pin   = LED1_Pin | LED2_Pin;
+    GPIO_InitStruct.Pin   = LED0_Pin | LED1_Pin;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+    LED0_OFF();
     LED1_OFF();
-    LED2_OFF();
 }
 
 /* ------------------------------------------------------------------------ */

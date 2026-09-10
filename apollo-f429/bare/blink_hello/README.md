@@ -9,7 +9,7 @@ VCP).
 
 ## What it demonstrates
 
-- The two LEDs blink in opposite phases: **LED1 (PB1)** and **LED2 (PB0)** —
+- The two LEDs blink in opposite phases: **LED0 (PB1)** and **LED1 (PB0)** —
   both low-active.
 - 180 MHz core clock banner.
 - ADC1 internal channels (STM32F42x/F43x mapping):

@@ -14,34 +14,23 @@
 
 #include "stm32f4xx_hal.h"
 
-/* --- LEDs (low-active, LOW = ON) ------------------------------------------- */
-#define LED1_Pin        GPIO_PIN_1
+/* --- LEDs (both low-active, LOW = ON) ----------------------------------------
+   LED0 = PB1, LED1 = PB0. Other projects use LED1; blink_hello uses both. */
+#define LED0_Pin        GPIO_PIN_1
+#define LED0_Port       GPIOB
+#define LED1_Pin        GPIO_PIN_0
 #define LED1_Port       GPIOB
-#define LED2_Pin        GPIO_PIN_0
-#define LED2_Port       GPIOB
+
+#define LED0_ON()       HAL_GPIO_WritePin(LED0_Port, LED0_Pin, GPIO_PIN_RESET)
+#define LED0_OFF()      HAL_GPIO_WritePin(LED0_Port, LED0_Pin, GPIO_PIN_SET)
+#define LED0_TOGGLE()   HAL_GPIO_TogglePin(LED0_Port, LED0_Pin)
 
 #define LED1_ON()       HAL_GPIO_WritePin(LED1_Port, LED1_Pin, GPIO_PIN_RESET)
 #define LED1_OFF()      HAL_GPIO_WritePin(LED1_Port, LED1_Pin, GPIO_PIN_SET)
 #define LED1_TOGGLE()   HAL_GPIO_TogglePin(LED1_Port, LED1_Pin)
 
-#define LED2_ON()       HAL_GPIO_WritePin(LED2_Port, LED2_Pin, GPIO_PIN_RESET)
-#define LED2_OFF()      HAL_GPIO_WritePin(LED2_Port, LED2_Pin, GPIO_PIN_SET)
-#define LED2_TOGGLE()   HAL_GPIO_TogglePin(LED2_Port, LED2_Pin)
-
-/* Backward-compat aliases used by the migrated fire-f429 projects. */
-#define LED_R_Pin       LED1_Pin
-#define LED_R_Port      LED1_Port
-#define LED_G_Pin       LED2_Pin
-#define LED_G_Port      LED2_Port
-#define LED_R_ON()      LED1_ON()
-#define LED_R_OFF()     LED1_OFF()
-#define LED_R_TOGGLE()  LED1_TOGGLE()
-#define LED_G_ON()      LED2_ON()
-#define LED_G_OFF()     LED2_OFF()
-#define LED_G_TOGGLE()  LED2_TOGGLE()
-#define LED_B_ON()      LED2_ON()
-#define LED_B_OFF()     LED2_OFF()
-#define LED_B_TOGGLE()  LED2_TOGGLE()
+/* Backward-compat aliases used by the migrated fire-f429 projects.
+   fire-f429's "LED_1" maps to LED1 (PB0); LED_R/G/B are not on this board. */
 #define LED_1_Pin       LED1_Pin
 #define LED_1_Port      LED1_Port
 #define LED_1_ON()      LED1_ON()

@@ -18,8 +18,8 @@ HSE, same 180 MHz clock tree) with a different pinout.
 - HSE crystal **25 MHz** (→ same clock tree as fire-f429: M=25 N=360 P=2 →
   SYSCLK 180 MHz, AHB=180, APB1=45, APB2=90, flash latency 6)
 - LEDs (both **low-active**, LOW = ON):
-  - **LED1** — PB1
-  - **LED2** — PB0
+  - **LED0** — PB1
+  - **LED1** — PB0
 - Console: **USART1** on **PA9 (TX) / PA10 (RX)**, AF7, **115200 8-N-1**
 - DHT11 temperature/humidity sensor: **PB12**
 - AT24C02 EEPROM: **I2C2** on **PH4 (SCL) / PH5 (SDA)**, AF4, **A0/A1/A2 = GND**
@@ -32,8 +32,8 @@ HSE, same 180 MHz clock tree) with a different pinout.
 | ----------- | --------------------------------------------------------- |
 | `bare/`    | **Bare-metal** projects — built-in flash + SRAM only |
 
-- `bare/blink_hello` — LED blink + ADC internal-channel demo: LED1 (PB1) and
-  LED2 (PB0) blink in opposite phases; prints the 180 MHz clock and
+- `bare/blink_hello` — LED blink + ADC internal-channel demo: LED0 (PB1) and
+  LED1 (PB0) blink in opposite phases; prints the 180 MHz clock and
   VREFINT / junction temperature / VBAT over USART1.
 - `bare/dhry_180m` — Dhrystone 2.1, 2,000,000 runs (GCC **or** armclang). See
   its README.
@@ -45,7 +45,7 @@ HSE, same 180 MHz clock tree) with a different pinout.
   (PH4/PH5). See its README.
 
 > Migration note: these five projects were migrated from `fire-f429` (same
-> MCU, same clock tree). Adapted: LEDs PH10-12/PD12 → PB1/PB0, and the
+> MCU, same clock tree). Adapted: LEDs PH10-12/PD12 → **PB1 (LED0) / PB0 (LED1)**, and the
 > AT24C02 bus I2C1 (PB6/PB7) → **I2C2 (PH4/PH5)**. Console and clock are
 > identical to fire-f429.
 

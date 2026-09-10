@@ -87,11 +87,17 @@ int main(void)
 
     while (1)
     {
-        /* Use the standalone PD12 LED for the default blink path. */
-        LED_R_OFF();
-        LED_G_OFF();
-        LED_B_OFF();
-        LED_1_TOGGLE();
+        /* Blink both on-board LEDs in opposite phases (LED1 = PB0, LED0 = PB1). */
+        if (phase & 1)
+        {
+            LED0_ON();
+            LED1_OFF();
+        }
+        else
+        {
+            LED0_OFF();
+            LED1_ON();
+        }
         phase++;
         HAL_Delay(250);
 
