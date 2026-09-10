@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Build the apollo-f429 (STM32F429IGT6) two-stage `app` firmware: stage-1
-# bootloader (internal flash) + stage-2 app (SDRAM 0xC0000000, NAND-shimmed).
-# Run with:  bash build.sh    (or ./build.sh on Linux)
+# Build the apollo-f429 (STM32F429IGT6) stage-1 bootloader (internal flash).
+# Pico-style: bash build.sh  ->  cmake -G Ninja .. && ninja
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
