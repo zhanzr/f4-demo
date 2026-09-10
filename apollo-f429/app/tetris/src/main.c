@@ -143,7 +143,9 @@ static uint32_t top_score[TOP_N];
 static uint8_t  blink_phase, start_visible, title_phase, title_tag;
 static uint32_t blink_next, title_anim_next, title_tag_next;
 
-/* left/right auto-repeat (DAS/ARR) */
+/* left/right auto-repeat (DAS/ARR) - initial delay + repeat interval */
+#define DAS_MS   130
+#define ARR_MS   40
 static uint32_t rep_next[2];
 static uint8_t  rep_on[2];
 
@@ -627,6 +629,7 @@ static void new_game(void)
     lines = 0;
     level = 1;
     speed = 800;
+    bag_refill();                        /* fresh shuffled 7-bag per game */
     next_drop = HAL_GetTick() + speed;
     next_t = rnd7();
     LCD_SetColor(FG);
@@ -734,6 +737,7 @@ int main(void)
     {
         rng = 0x1234ABCD;
     }
+    bag_refill();                    /* first 7-bag must be shuffled, not 0s */
 
     nv_load(nvbuf);
 
@@ -814,7 +818,7 @@ int main(void)
                         cur_x = (int8_t)(cur_x + dx);
                         draw_piece();
                     }
-                    rep_next[i] = now + 220;
+                    rep_next[i] = now + DAS_MS;
                     rep_on[i] = 1;
                 }
                 else if (rep_on[i] && held(b) && now >= rep_next[i])
@@ -825,7 +829,7 @@ int main(void)
                         cur_x = (int8_t)(cur_x + dx);
                         draw_piece();
                     }
-                    rep_next[i] = now + 50;
+                    rep_next[i] = now + ARR_MS;
                 }
                 else if (!held(b))
                 {
