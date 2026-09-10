@@ -26,8 +26,15 @@
 
 #define APP_BASE       0xC0000000UL
 #define APP_LIMIT      0xC0000000UL + 0x2000000UL   /* 32 MiB SDRAM window */
-#define APP_IMAGE_MAX  0x00020000UL                 /* 128 KiB of NAND data */
+#define APP_IMAGE_MAX  0x00080000UL                 /* hard safety cap: 512 KiB */
 #define APP_PAGES      (APP_IMAGE_MAX / 2048UL)
+/* Consecutive fully-erased (0xFF) NAND pages that mark the end of the image.
+ * The app image is stored *raw* (no length header), so the bootloader finds
+ * its end by scanning for erased pages - NAND blocks are 0xFF after erase,
+ * and any pages past the written image read back all-0xFF. A 4-page (8 KiB)
+ * run inside real code/data is essentially impossible, while the erased tail
+ * is far longer, so this is a reliable end-of-image marker. */
+#define APP_END_RUN    4U
 
 /* The app's reset-vector SP may sit in internal SRAM (stack kept there) or in
  * the SDRAM window; the reset vector itself must be in the SDRAM code space.
@@ -75,10 +82,15 @@ static uint32_t rd32(const uint8_t *p)
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-/* Copy the app image from NAND bank3 offset 0 into SDRAM at APP_BASE. */
-static int load_app(uint8_t *dst)
+/* Copy the app image from NAND bank3 offset 0 into SDRAM at APP_BASE.
+ * Stops at the first run of APP_END_RUN consecutive erased (0xFF) pages,
+ * so any app size up to APP_IMAGE_MAX works without recompiling the
+ * bootloader. Sets *out_bytes to the number of bytes copied. */
+static int load_app(uint8_t *dst, uint32_t *out_bytes)
 {
     uint32_t page;
+    uint32_t ff_run = 0;
+    uint32_t copied = 0;
 
     for (page = 0; page < APP_PAGES; page++)
     {
@@ -89,12 +101,38 @@ static int load_app(uint8_t *dst)
                    (unsigned long)page, (unsigned)res);
             return 1;
         }
+
+        /* Check whether this whole page is erased (all 0xFF). */
+        {
+            const uint8_t *p = dst + page * 2048UL;
+            uint32_t i, is_ff = 1;
+            for (i = 0; i < 2048UL; i++)
+            {
+                if (p[i] != 0xFFU) { is_ff = 0; break; }
+            }
+            if (is_ff)
+            {
+                if (++ff_run >= APP_END_RUN)
+                {
+                    break;   /* found the erased tail: image ends here */
+                }
+            }
+            else
+            {
+                ff_run = 0;
+                copied = (page + 1U) * 2048UL;
+            }
+        }
     }
+
+    *out_bytes = copied;
     return 0;
 }
 
-/* Basic bootability check on the firmware copied to SDRAM. */
-static int app_bootable(uint32_t *out_sp, uint32_t *out_rv)
+/* Basic bootability check on the firmware copied to SDRAM. The reset vector
+ * must lie inside the bytes actually copied (img_bytes), so a truncated copy
+ * (erased tail misdetected as image) fails here rather than running garbage. */
+static int app_bootable(uint32_t img_bytes, uint32_t *out_sp, uint32_t *out_rv)
 {
     uint8_t hdr[8];
     uint32_t sp, rv;
@@ -106,7 +144,8 @@ static int app_bootable(uint32_t *out_sp, uint32_t *out_rv)
     *out_rv = rv;
 
     return (SRAM_VECTOR_OK(sp)) &&
-           (rv & 1u) && (rv & ~1u) >= APP_BASE && (rv & ~1u) < APP_LIMIT;
+           (rv & 1u) && (rv & ~1u) >= APP_BASE &&
+           (rv & ~1u) < APP_BASE + img_bytes;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -126,6 +165,7 @@ static void jump_to_app(void)
 int main(void)
 {
     uint32_t sp = 0, rv = 0;
+    uint32_t img_bytes = 0;
     int ok;
 
     HAL_Init();
@@ -147,8 +187,14 @@ int main(void)
                (unsigned long)((uint32_t)nand_dev.block_totalnum / 1024U)
                    * (nand_dev.page_mainsize / 1024U) * nand_dev.block_pagenum,
                (unsigned long)nand_dev.id);
-        ok = (load_app((uint8_t *)APP_BASE) == 0);
-        ok = ok && app_bootable(&sp, &rv);
+        ok = (load_app((uint8_t *)APP_BASE, &img_bytes) == 0);
+        if (ok)
+        {
+            printf("  app image: %lu bytes (%lu pages)\r\n",
+                   (unsigned long)img_bytes,
+                   (unsigned long)(img_bytes / nand_dev.page_mainsize));
+        }
+        ok = ok && app_bootable(img_bytes, &sp, &rv);
     }
 
     printf("NAND firmware check: %s (SP=0x%08lX, Reset=0x%08lX)\r\n",
