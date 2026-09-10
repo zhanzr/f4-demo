@@ -8,11 +8,11 @@ the C runtime; the inferred kernel is copy-in'd to SRAM1 at startup.
 
 ## Results (measured on hardware, SysTick timing, kernel verified in SRAM1)
 
-| Toolchain | Flags | Iterations/Sec | Time (s) | CRC (crcfinal) |
-| --------- | ----- | -------------- | -------- | -------------- |
-| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **168.57** | 59.32 | 0x988c |
-| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **200.45** | 49.89 | 0x988c |
-| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 168.10 | 59.49 | 0x988c |
+| Toolchain | Flags | Iterations/Sec | Time (s) |
+| --------- | ----- | -------------- | -------- |
+| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **168.57** | 59.32 |
+| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **200.45** | 49.89 |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 168.10 | 59.49 |
 
 Per toolchain, only the highest measured configuration is shown. All runs
 print `Correct operation validated` with `crcfinal 0x988c`.

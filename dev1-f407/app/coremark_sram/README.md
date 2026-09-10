@@ -30,11 +30,11 @@ counter rollover**, not precision or SRAM-specific "under-counting":
 
 ## Results (measured on hardware, SysTick timing, kernel verified in SRAM1)
 
-| Toolchain | Flags | Iterations/Sec (SRAM1) | Time (s) | CRC (crcfinal) |
-| --------- | ----- | ---------------------- | -------- | -------------- |
-| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **330.72** | 30.24 | 0x988c |
-| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **394.38** | 25.36 | 0x988c |
-| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 291.22 | 34.34 | 0x988c |
+| Toolchain | Flags | Iterations/Sec (SRAM1) | Time (s) |
+| --------- | ----- | ---------------------- | -------- |
+| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **330.72** | 30.24 |
+| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **394.38** | 25.36 |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 291.22 | 34.34 |
 
 Per toolchain, only the highest measured configuration is shown (the kernel
 was confirmed in SRAM1 via the link map for every row). All runs print

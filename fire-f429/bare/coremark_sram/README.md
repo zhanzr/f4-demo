@@ -24,11 +24,11 @@ instruction fetch).
 
 ## Results (measured on hardware, SysTick timing, kernel verified in SRAM1)
 
-| Toolchain | Flags | Iterations/Sec (SRAM1) | Time (s) | CRC (crcfinal) |
-| --------- | ----- | ---------------------- | -------- | -------------- |
-| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **382.57** | 26.14 | 0x988c |
-| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **450.05** | 22.22 | 0x988c |
-| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 339.03 | 29.50 | 0x988c |
+| Toolchain | Flags | Iterations/Sec (SRAM1) | Time (s) |
+| --------- | ----- | ---------------------- | -------- |
+| GCC | `-Ofast -ffp-contract=fast -funroll-all-loops` (default) | **382.57** | 26.14 |
+| ARMCLANG (Keil AC6) | `-Omax -fno-lto` | **450.05** | 22.22 |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 339.03 | 29.50 |
 
 Per toolchain, only the highest measured configuration is shown (the kernel
 was confirmed in SRAM1 via the link map for every row). All runs print
