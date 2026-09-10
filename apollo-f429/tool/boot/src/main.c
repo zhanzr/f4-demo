@@ -26,7 +26,12 @@
 
 #define APP_BASE       0xC0000000UL
 #define APP_LIMIT      0xC0000000UL + 0x2000000UL   /* 32 MiB SDRAM window */
-#define APP_IMAGE_MAX  0x00100000UL                 /* hard safety cap: 1 MiB */
+/* Hard safety cap for the copy loop: 8 MiB. The app image + its .bss/heap
+ * share this 32 MiB SDRAM window (the app runs from it), so the image must
+ * leave room for the runtime RAM. The auto-detect below stops at the erased
+ * (all-0xFF) tail long before this - this is only a runaway-scan guard, not
+ * the actual copy size. */
+#define APP_IMAGE_MAX  0x00800000UL
 #define APP_PAGES      (APP_IMAGE_MAX / 2048UL)
 /* Consecutive fully-erased (0xFF) NAND pages that mark the end of the image.
  * The app image is stored *raw* (no length header), so the bootloader finds
