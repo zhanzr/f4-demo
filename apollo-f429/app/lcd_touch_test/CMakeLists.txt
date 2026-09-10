@@ -41,6 +41,7 @@ add_executable(${PROJECT_NAME}.elf
     ${BARE_SRC}/delay.c
     ${BARE_SRC}/math_shim.c
     ${BARE_SRC}/adc_internal.c
+    ${BARE_SRC}/dht11.c
     ${BARE_SRC}/fonts/lcd_fonts.c
     ${BARE_SRC}/fonts/lcd_font_1608.c
     ${BARE_SRC}/vendor/touch/touch.c

@@ -28,6 +28,7 @@ add_executable(${PROJECT_NAME}.elf
     src/delay.c
     src/math_shim.c
     src/adc_internal.c
+    src/dht11.c
     src/fonts/lcd_fonts.c
     src/fonts/lcd_font_1608.c
     src/vendor/touch/touch.c

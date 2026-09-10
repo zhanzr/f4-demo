@@ -135,12 +135,24 @@ void LCD_WriteRAM(uint16_t rgb)
 static uint16_t LCD_ReadID(void)
 {
     uint16_t id;
+    int attempt;
 
-    LCD_WR_REG(0xD3);                        /* read ID command */
-    LCD_RD_DATA();                           /* dummy */
-    LCD_RD_DATA();                           /* 0x00 */
-    id  = LCD_RD_DATA() << 8;                /* high byte 0x93 */
-    id |= LCD_RD_DATA();                     /* low byte  0x41 */
+    /* The ILI9341 0xD3 read needs the panel to settle and a couple of dummy
+     * reads; retry a few times in case of a glitchy first read. */
+    for (attempt = 0; attempt < 3; attempt++)
+    {
+        uint16_t b0, b1, b2, b3;
+
+        LCD_WR_REG(0xD3);                        /* read ID command */
+        delay_us(50);                            /* settle */
+        b0 = LCD_RD_DATA();                      /* dummy */
+        b1 = LCD_RD_DATA();                      /* 0x00 */
+        b2 = LCD_RD_DATA();                      /* high byte 0x93 */
+        b3 = LCD_RD_DATA();                      /* low byte  0x41 */
+        (void)b0; (void)b1;
+        id = (uint16_t)((b2 << 8) | b3);
+        if (id == 0x9341U || id == 0x5310U) { return id; }
+    }
     return id;
 }
 
@@ -163,7 +175,8 @@ void LCD_Init(void)
     lcddev.id = LCD_ReadID();
     if (lcddev.id != 0x9341U)
     {
-        printf("LCD ID:0x%04X (expected ILI9341 0x9341)\r\n", lcddev.id);
+        printf("LCD ID:0x%04X (info only; ILI9341 init runs regardless)\r\n",
+               lcddev.id);
     }
 
     /* ILI9341 init sequence (vendor tft_lcd_test, 0x9341 branch, verbatim). */
@@ -312,7 +325,16 @@ void LCD_Set_Window(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h)
 void LCD_Clear(uint32_t color)
 {
     uint32_t total = (uint32_t)lcddev.width * lcddev.height;
-    LCD_SetCursor(0, 0);
+
+    /* Always set the full panel window first - 0x2A/0x2B may have been left at
+     * a small rect by the st7789-style text/fill routines, and LCD_SetCursor
+     * only updates the start coordinate. */
+    LCD_WR_REG(lcddev.setxcmd);
+    LCD_WR_DATA(0); LCD_WR_DATA(0);
+    LCD_WR_DATA((lcddev.width - 1) >> 8);  LCD_WR_DATA((lcddev.width - 1) & 0xFF);
+    LCD_WR_REG(lcddev.setycmd);
+    LCD_WR_DATA(0); LCD_WR_DATA(0);
+    LCD_WR_DATA((lcddev.height - 1) >> 8); LCD_WR_DATA((lcddev.height - 1) & 0xFF);
     LCD_WriteRAM_Prepare();
     while (total--)
     {
@@ -439,13 +461,14 @@ void LCD_Draw_Circle(uint16_t x0, uint16_t y0, uint8_t r)
 
 void LCD_ShowChar(uint16_t x, uint16_t y, uint8_t num, uint8_t size, uint8_t mode)
 {
-    /* Route through the proven st7789-style text renderer. mode != 0 is
-     * transparent (no background box), mode == 0 draws the BACK_COLOR box -
-     * exactly the vendored LCD_ShowChar semantics, using the same LSB-first
-     * font tables the info page uses. */
+    /* Route through the st7789-style text renderer. mode != 0 is transparent
+     * (no background box), mode == 0 draws the BACK_COLOR box - the vendored
+     * LCD_ShowChar semantics. POINT_COLOR/BACK_COLOR are RGB565 (e.g. RED =
+     * 0xF800), so copy them into s_Color/s_BackColor directly - going through
+     * the rgb888->rgb565 setters would mis-decode 0xF800 as black. */
     LCD_SetAsciiFont((size == 12) ? &ASCII_Font12 : &ASCII_Font16);
-    LCD_SetColor(POINT_COLOR);
-    LCD_SetBackColor(BACK_COLOR);
+    s_Color     = (uint16_t)POINT_COLOR;
+    s_BackColor = (uint16_t)BACK_COLOR;
     LCD_ShowTransparent((mode != 0) ? 1U : 0U);
     LCD_DisplayChar(x, y, num);
     LCD_ShowTransparent(0);
