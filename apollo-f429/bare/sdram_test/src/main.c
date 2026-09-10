@@ -159,11 +159,11 @@ int main(void)
     read_cycles = DWT->CYCCNT - start;
 
     printf("Write: %lu cycles, %lu.%03lu MiB/s\r\n", (unsigned long)write_cycles,
-            (unsigned long)(((SDRAM_SIZE_BYTES / (1024UL * 1024UL)) * SystemCoreClock) / write_cycles),
-            (unsigned long)(((SDRAM_SIZE_BYTES / (1024UL * 1024UL)) * SystemCoreClock % write_cycles) * 1000UL / write_cycles));
+            (unsigned long)(((uint64_t)(SDRAM_SIZE_BYTES / (1024UL * 1024UL)) * SystemCoreClock) / write_cycles),
+            (unsigned long)((((uint64_t)(SDRAM_SIZE_BYTES / (1024UL * 1024UL)) * SystemCoreClock % write_cycles) * 1000UL) / write_cycles));
     printf("Read:  %lu cycles, %lu.%03lu MiB/s\r\n", (unsigned long)read_cycles,
-            (unsigned long)(((SDRAM_SIZE_BYTES / (1024UL * 1024UL)) * SystemCoreClock) / read_cycles),
-            (unsigned long)(((SDRAM_SIZE_BYTES / (1024UL * 1024UL)) * SystemCoreClock % read_cycles) * 1000UL / read_cycles));
+            (unsigned long)(((uint64_t)(SDRAM_SIZE_BYTES / (1024UL * 1024UL)) * SystemCoreClock) / read_cycles),
+            (unsigned long)((((uint64_t)(SDRAM_SIZE_BYTES / (1024UL * 1024UL)) * SystemCoreClock % read_cycles) * 1000UL) / read_cycles));
     printf("Result: %s (%lu errors)\r\n", errors == 0U ? "PASS" : "FAIL", (unsigned long)errors);
 
     while (1)

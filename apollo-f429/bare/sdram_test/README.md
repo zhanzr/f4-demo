@@ -28,10 +28,17 @@ Measured on apollo-f429 hardware:
 
 | Operation | Cycles | Throughput |
 | --------- | ------ | ---------- |
-| Write     | 100,680,084 | 14.039 MiB/s |
-| Read      | 287,238,823 | 5.010 MiB/s |
+| Write     | 117,460,087 | 49.04 MiB/s |
+| Read      | 287,238,792 | 20.05 MiB/s |
 
 Hardware result: `PASS (0 errors)`.
+
+The read rate matches the fire-f429 board (20.05 vs 20.03 MiB/s) and the write
+is within its range (49 vs 57 MiB/s) — the W9825G6KH is a standard 166 MHz-B
+class part run at the same 90 MHz FMC SDCLK, so it is **not** slower than the
+fire-f429 IS42S16400J. (An earlier print reported 14.0/5.0 MiB/s — that was a
+32-bit overflow in the MiB/s formula for the 32 MiB size, fixed with 64-bit
+arithmetic.)
 
 ## Build and flash
 

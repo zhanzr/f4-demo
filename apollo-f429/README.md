@@ -45,8 +45,12 @@ HSE, same 180 MHz clock tree) with a different pinout.
   (PH4/PH5). See its README.
 - `bare/sdram_test` — runtime FMC test of the onboard **W9825G6KH** SDRAM:
   **32 MiB**, 16-bit, bank 1 at `0xC0000000` (13-bit rows A0-A12), no linker
-  remapping. Measured: write 14.039 MiB/s, read 5.010 MiB/s, **PASS**. See its
-  README.
+  remapping. Measured: write 49.04 MiB/s, read 20.05 MiB/s (same class as
+  fire-f429), **PASS**. See its README.
+- `bare/nand_test` — runtime FMC test of the onboard **MT29F4G08ABADA** NAND
+  flash (512 MB, bank 3 `0x80000000`, NCE3=PG9, R/B=PD6): erase/write/read
+  verify loop. Measured **PASS**; write 6,350 / read 9,194 KB/s. (fire-f429
+  has **no** NAND.) See its README.
 
 > Migration note: these five projects were migrated from `fire-f429` (same
 > MCU, same clock tree). Adapted: LEDs PH10-12/PD12 → **PB1 (LED0) / PB0 (LED1)**, and the
