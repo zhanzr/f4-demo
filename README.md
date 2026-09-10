@@ -13,10 +13,12 @@ build/flash/console — live in each board folder's README.
 | `dev1-f407/`     | Custom STM32F407VET6 @ 168 MHz, 25 MHz HSE, 3 LEDs, USART3 console (see its README) |
 | `nano-f407/`     | STM32F407VET6 @ 168 MHz, 8 MHz HSE, 1 LED (PB0), USART1 → ST-Link VCP console (see its README) |
 | `fire-f429/`     | STM32F429IGT6 @ 180 MHz, 1 MB flash / 256 KB SRAM, 4 LEDs (PH10/11/12, PD12), USART1 → USB-serial VCP console (see its README) |
+| `apollo-f429/`   | STM32F429IGT6 @ 180 MHz (fire-f429 sibling: 25 MHz HSE, same clock tree), 2 LEDs (PB1/PB0), DHT11 PB12, AT24C02 on I2C2 PH4/PH5, USART1 console (see its README) |
 
 The `-<chip>` suffix in board folder names keeps it a multi-board/**multi-chip**
-repo: e.g. a `nano-f411` or `nano-f446` would sit next to `nano-f407`, and a
-`fire-f429` board would sit next to the F407 boards.
+repo: e.g. a `nano-f411` or `nano-f446` would sit next to `nano-f407`, a
+`fire-f429` board would sit next to the F407 boards, and the apollo-f429 is a
+sibling of fire-f429 (same MCU + clock tree, different pinout).
 
 ## Vendored HAL / CMSIS
 
