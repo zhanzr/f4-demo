@@ -2,10 +2,11 @@
 
 Drives the **MD183** 1.83" **240x284** module — **NV3030B** LCD controller
 plus **CST816D** capacitive touch — on the **nano-f411** board
-(STM32F411CEU6 @ 100 MHz). Test patterns follow
-`st7365_md350_320x480`, driven by **hardware SPI1 only** (the vendor
-example likewise uses the SPI peripheral — there is no software
-bit-bang in it), plus touch sensor printout on the serial port.
+(STM32F411CEU6 @ 100 MHz, APB2 overridden to 100 MHz). Test patterns
+follow `st7365_md350_320x480`, driven over **two transports behind one
+byte-level API** — a vendor-verbatim **soft bit-bang** (TK499 example
+style, ~2 MHz) and **hardware SPI1 @ 50 MHz** — plus touch sensor
+printout on the serial port.
 
 ## Driving the NV3030B (wrapped-command SPI)
 
@@ -15,14 +16,18 @@ is written as a wrapped transaction — CS low, then four bytes
 frame afterwards. This is the vendor example's exact framing
 (`STM32_TK018F3716_hard_spi_captouch`).
 
-**About the "DC/MISO" pin (PA6):** checked in the vendor example —
-`spi.h` defines `LCD_DC = GPIO_Pin_6`, but **PA6 is never configured nor
-driven anywhere**; the wrapped framing carries command/data in the
-transaction itself, so DC is not needed. `DrawPixel` redundantly sets PA6
-once, which has no effect. Conclusion: leave PA6 unconnected/unconfigured.
-(The module's connector labels this pin DC/MISO depending on the doc; it
-is not usable as a read-back MISO — the panel is write-only through this
-interface.)
+**About the "DC/MISO" pin (PA6):** the wrapped framing carries command/data
+in the transaction itself, so DC is never toggled. The TK499 vendor config
+ures PA6 as a push-pull output and leaves it LOW; this port does the same
+(driving it low keeps the line defined next to SCL/SDA). It is not usable
+as a read-back MISO — the panel is write-only through this interface.
+
+**SPE-enable gotcha (HW bus):** with SPE=0 the STM32 SCK pin idles *low*;
+setting SPE with CPOL=1 drives it *high*. Doing that while CS is already
+low injects a spurious rising SCL edge — one extra bit that shifts the
+whole wrapped stream (this caused both the earlier "blurry" image and a
+latched/blank panel). `WriteComm` therefore enables the SPI *before*
+dropping CS; SPE stays on afterwards.
 
 - **Init sequence** (vendor-verbatim): command-set enable (0xFD), gate/
   source timing (0x61..0x64), VSP/VSN (0x65/0x66), gamma and power
@@ -32,8 +37,13 @@ interface.)
   **INVON** (0x21, IPS), sleep out (0x11), display on (0x29).
 - **Geometry**: 240x284, windows at COL_Pre = 0, ROW_Pre = 0 (full range
   addressed directly). The vendor maps touch Y as `284 - Y`.
-- **No reset pin** on this module: the vendor sequence settles CS
-  (high, then low) for 100 ms before the init commands; no RST GPIO.
+- **No reset pin** and **no software-reset command** on this controller
+  (the public command set has no 0x01): the boot path settles CS
+  (high, then low) for 100 ms like the vendor; `LCD_Reinit` recovers a
+  live panel with **display off (0x28) + sleep in (0x10)** — the closest
+  equivalent, it stops DC-DC/oscillator/scan — before re-running the
+  init (which now waits the datasheet's **120 ms after sleep out**,
+  where the vendor only waited 20 ms).
 - **No backlight pin** in this wiring: the module's backlight is
   hardwired on (the vendor drives BL from a different pin that is not
   part of this connector wiring).
@@ -52,10 +62,10 @@ the touch bus is **bit-banged** (open-drain SDA, push-pull SCL).
 
 | LCD pin | MCU pin | Feature |
 | ------- | ------- | ------- |
-| SCL | PA5 | SPI clock (HW SPI1_SCK, AF5) |
-| SDA | PA7 | SPI data out (HW SPI1_MOSI, AF5) |
+| SCL | PA5 | SPI clock (HW SPI1_SCK AF5 / soft bit-bang GPIO) |
+| SDA | PA7 | SPI data out (HW SPI1_MOSI AF5 / soft bit-bang GPIO) |
 | CS  | **PA4** | Chip select (GPIO software CS) |
-| DC  | PA6 | **not used** by the wrapped protocol (vendor leaves it floating too) |
+| DC  | PA6 | not toggled by the wrapped protocol; **driven push-pull LOW** like the TK499 vendor leaves it |
 | D2/D3 | - | not connected (QSPI lanes; the F411 has no QSPI) |
 | RST | - | **no reset pin on this module** (vendor settles CS instead) |
 | BL  | - | **not wired** (module backlight is on whenever powered) |
@@ -67,15 +77,21 @@ the touch bus is **bit-banged** (open-drain SDA, push-pull SCL).
 
 ## What it does
 
-The demo loops forever on the HW SPI1 bus, running the **full pattern set** — TEST_STAND (frame / 16-level gray / bands / solid colors, timed),
-info pages (normal + inverted), HSV gradient sweep, LED test — with a
-live FPS counter, plus **touch printout on the serial port**
+The demo loops forever: **soft bit-bang pass** (full pattern set) →
+**HW SPI1 pass @ 50 MHz** (full set) → **NES-size pass** (the same set
+inside a centered **224x256** window, HW only) — TEST_STAND (frame /
+16-level gray / bands / solid colors, timed), info pages (normal +
+inverted, with the solid-fill durations), HSV gradient sweep, LED test —
+with a live FPS counter, plus **touch printout on the serial port**
 (`[TOUCH] down X=.. Y=..` on touch, `[TOUCH] release` on lift).
 
-Measured solid fills (320x284 = 68,160 px): ~142 ms per fill at the
-12.5 MHz isolation rate on HW SPI1 (wire time alone is ~82 ms, so the
-per-byte polling overhead is already visible here; DMA would be
-the next step).
+Measured solid fills (240x284 = 68,160 px), per driving method:
+
+| Pass | Rate | Fill time |
+| ---- | ---- | --------- |
+| Soft bit-bang | ~2 MHz | ~540 ms |
+| HW SPI1 full screen | 50 MHz | ~103 ms (wire time alone ~22 ms; rest is per-byte polling overhead) |
+| HW SPI1 NES 224x256 | 50 MHz | ~87 ms |
 
 ## Build / flash / console
 
@@ -95,11 +111,11 @@ prints once at boot and the pattern phases log as they run, looping forever.
 
 ## Files
 
-- `src/main.c` - pattern set on both buses + touch printout
+- `src/main.c` - pattern set on both buses + NES-size HW pass + touch printout
 - `src/lcd.c` / `lcd.h` - NV3030B init + 240x284 geometry + drawing API +
-  `LCD_Reinit`
+  `LCD_Reinit` (sleep-in recovery)
 - `src/interface.c` / `interface.h` - wrapped-command bus primitives
-  (HW SPI1 wrapped-command writes) + bus init
+  (soft bit-bang ~2 MHz / HW SPI1 @ 50 MHz) + bus switching
 - `src/touch.c` / `touch.h` - CST816D bit-banged I2C touch driver
 - `src/lcd/lcd_fonts.c` / `lcd_fonts.h` - ASCII 6x12 font
 - `src/lcd/lcd_font_1608.c` / `lcd_font_1608.h` - ASCII 8x16 banner font
