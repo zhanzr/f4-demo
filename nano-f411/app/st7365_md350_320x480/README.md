@@ -69,9 +69,12 @@ Pattern set (per pass, live FPS counter throughout):
 4. **LED test** - board LED PC13 on/off.
 
 All with a **live FPS counter** drawn transparently in the bottom band.
-Measured fills: soft ~450 ms per solid fill vs ~183 ms on HW SPI1 @ 50
-MHz (16-bit burst frames; the wire floor is ~50 ms - the rest is
-per-byte polling overhead).
+Measured fills: soft ~1160 ms per solid fill vs ~183 ms on HW SPI1 @ 50
+MHz (the wire floor at 50 MHz is ~50 ms; the HW path is ~4.5x faster than
+the soft pass even though the per-byte polling overhead dominates both).
+The soft bit-bang rate is deliberately NOT tuned beyond ~2.1 MHz: faster
+variants (direct BSRR writes, ~7-10 MHz) were tested and leave the panel
+blank - see the note in `src/interface.c`.
 
 ## Backlight PWM
 

@@ -265,6 +265,15 @@ static uint8_t SoftReadByte(void)
 
 static void SendDataSPI(uint8_t dat)
 {
+    /* Plain HAL_GPIO_WritePin calls, no padding NOPs. The HAL call
+     * overhead sets the bit period to ~470 ns (~2.1 MHz) - the
+     * proven-reliable rate for this module over jumper wiring. Faster
+     * variants were measured and rejected:
+     *   - direct BSRR writes (~7-10 MHz): panel stays blank (white);
+     *   - BSRR/NOP-padded variants: 1.4-3.9 ms fills - all SLOWER than
+     *     this version, since the call overhead IS the working bit
+     *     timing.
+     * The fast path for this panel is HW SPI1 @ 50 MHz (~183 ms fills). */
     for (int i = 0; i < 8; i++)
     {
         if ((dat & 0x80U) != 0U)
