@@ -32,6 +32,7 @@ void WriteComm(uint16_t data);
 void WriteData(uint16_t data);
 void SendData(uint32_t color);
 void LCD_WriteDataFast(uint8_t data);   /* raw byte, caller manages framing */
+void LCD_FillBulk(uint32_t color, uint32_t pixels); /* solid burst, open frame */
 void LCD_BeginData(void);                /* CS low, ready for raster bytes */
 void LCD_EndData(void);                  /* CS high, closes the frame */
 

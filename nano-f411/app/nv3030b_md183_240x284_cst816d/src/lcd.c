@@ -284,17 +284,9 @@ void BlockWrite(uint16_t Xstart, uint16_t Xend, uint16_t Ystart, uint16_t Yend)
    ===================================================================== */
 void DispColor(uint32_t color)
 {
-    int i, j;
     BlockWrite(0, LCD_W() - 1U, 0, LCD_H() - 1U);
     LCD_BeginData();
-    for (i = 0; i < (int)LCD_H(); i++)
-    {
-        for (j = 0; j < (int)LCD_W(); j++)
-        {
-            LCD_WriteDataFast((uint8_t)(color >> 8));
-            LCD_WriteDataFast((uint8_t)color);
-        }
-    }
+    LCD_FillBulk(color, (uint32_t)LCD_W() * LCD_H());
     LCD_EndData();
 }
 
@@ -641,11 +633,7 @@ void LCD_FillRect(uint16_t x, uint16_t y, uint16_t width, uint16_t height)
     if (n == 0U) { return; }
     LCD_SetAddress(x, y, (uint16_t)(x + width - 1), (uint16_t)(y + height - 1));
     LCD_BeginData();
-    while (n--)
-    {
-        LCD_WriteDataFast((uint8_t)(s_Color >> 8));
-        LCD_WriteDataFast((uint8_t)s_Color);
-    }
+    LCD_FillBulk(s_Color, n);
     LCD_EndData();
 }
 

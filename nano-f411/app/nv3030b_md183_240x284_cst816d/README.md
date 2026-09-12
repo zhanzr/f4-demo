@@ -89,9 +89,9 @@ Measured solid fills (240x284 = 68,160 px), per driving method:
 
 | Pass | Rate | Fill time |
 | ---- | ---- | --------- |
-| Soft bit-bang | ~2 MHz | ~540 ms |
-| HW SPI1 full screen | 50 MHz | ~103 ms (wire time alone ~22 ms; rest is per-byte polling overhead) |
-| HW SPI1 NES 224x256 | 50 MHz | ~87 ms |
+| Soft bit-bang | ~2 MHz | ~490 ms |
+| HW SPI1 full screen | 50 MHz | ~30 ms (wire floor ~22 ms; `LCD_FillBulk` feeds DR directly so the SPI, not the CPU, is the bottleneck) |
+| HW SPI1 NES 224x256 | 50 MHz | ~25 ms |
 
 ## Build / flash / console
 

@@ -264,6 +264,42 @@ void LCD_WriteDataFast(uint8_t data)
     spi_put(data);
 }
 
+/* Solid-color bulk burst into the open frame: a tight register-level
+ * loop that writes DR directly (no per-byte calls, no buffer). At
+ * 50 MHz the wire needs 160 ns/byte; the loop's poll+store fits in
+ * that window, so the SPI - not the CPU - is the bottleneck. */
+void LCD_FillBulk(uint32_t color, uint32_t pixels)
+{
+    uint8_t hi = (uint8_t)(color >> 8);
+    uint8_t lo = (uint8_t)color;
+
+    if (s_bus_hw == 0U)
+    {
+        while (pixels-- != 0U)
+        {
+            soft_tx(&hi, 1U);
+            soft_tx(&lo, 1U);
+        }
+        return;
+    }
+
+    SPI_HW_Flush();
+    spi_hw_enable();
+    while (pixels-- != 0U)
+    {
+        while ((SPI1->SR & SPI_SR_TXE) == 0U) { }
+        *((__IO uint8_t *)&SPI1->DR) = hi;
+        while ((SPI1->SR & SPI_SR_TXE) == 0U) { }
+        *((__IO uint8_t *)&SPI1->DR) = lo;
+    }
+    while ((SPI1->SR & SPI_SR_BSY) != 0U) { }
+    if ((SPI1->SR & SPI_SR_OVR) != 0U)
+    {
+        (void)SPI1->DR;
+        (void)SPI1->SR;
+    }
+}
+
 /* Begin/end a raster burst. The caller issues WriteComm(0x2C) first;
  * BeginData just makes sure CS is low and the burst stays in one frame;
  * EndData closes it. */
