@@ -61,8 +61,8 @@ Pattern set (per pass, live FPS counter throughout):
 2. **Info page** (normal, then **inverted**): compiler, build date, CPU
    frequency, drive method (soft bit-bang / HW SPI1), the IO map, live
    backlight duty, the UID, the panel **IC ID** read over MISO (0xD3:
-   `1D E5 80` on this unit; reads only work on the HW bus - the panel
-   does not drive MISO during bit-banged reads), and the measured
+   `1D E5 80` - the read works on the HW bus; the soft bit-bang does not
+   meet the panel's read timing, so soft shows "ID --"), and the measured
    **"xx : xx ms"** solid-fill durations from this pass.
 3. **Gradient** - animated HSV hue sweep across the full color wheel
    (4 s per sweep).
