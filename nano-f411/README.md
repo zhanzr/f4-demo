@@ -31,6 +31,7 @@ Hardware photos: `board_images/` (`board_1.jpg`, `board_2.jpg`, `board_3.jpg`).
 | `app/blink_hello`    | Blinks the PC13 LED + samples the **ADC1 internal channels** (temperature/VREFINT/VBAT on the shared IN18 input) and prints them |
 | `app/st7735_md144_128x128` | **ST7735S 1.44" 128x128** LCD (MD144) via bit-banged 4-wire SPI (SCL=PA5 **SDA=PA7 RES=PA6** DC=PA4 CS=PB8 - SDA/RES swapped vs the vendor), md130-style test patterns (banner, info pages, TEST_STAND, HSV gradient, LED, FPS); backlight **BL=PB9 TIM4_CH4 ~20% PWM** |
 | `app/st7789_md169_240x280` | **ST7789T3 1.69" 240x280** LCD (MD169, IPS) - same wiring + dual-bus demo as the st7735 baseline; ST7789 init + ROW_Pre=20 geometry from the c542 st7789 bsp |
+| `app/st7789_md130_240x240` | **ST7789V 1.3" 240x240** LCD (MD130, IPS) - same wiring + dual-bus demo; ST7789 init, COL_Pre = ROW_Pre = 0 (240x240 glass at GRAM rows 0..239) |
 | `app/dhry_100m`      | Dhrystone 2.1, 2,000,000 runs, GCC **or** armclang, `-Ofast -ffp-contract=fast -funroll-loops` |
 | `app/coremark_100m`  | CoreMark 1.0.1, 10,000 iterations, GCC **or** armclang **or** starm-clang, `-Ofast`-class flags |
 | `app/coremark_sram`  | CoreMark with the timed kernel linked into **SRAM** (0x20000000) and copy-in'd at startup; SysTick timing |
