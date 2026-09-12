@@ -56,9 +56,9 @@ uint16_t LCD_H(void)
 
 
 /* =====================================================================
-   GPIO setup: PA4(CS) PA5(SCL) PA7(SDA). The module has no reset pin
-   (the vendor sequence settles CS low instead) and no DC pin in this
-   protocol.
+   GPIO setup: CS = PA4 as GPIO. SCL/SDA (PA5/PA7) are owned by the bus
+   selection (LCD_UseHwBus muxes them to SPI1 AF5) and must NOT be
+   touched here, or the HW path loses its pins.
    ===================================================================== */
 void LCD_GPIOInit(void)
 {
@@ -66,17 +66,13 @@ void LCD_GPIOInit(void)
 
     __HAL_RCC_GPIOA_CLK_ENABLE();
 
-    /* Highest GPIO speed: cleanest edges for the bit-banged bus. */
     g.Mode  = GPIO_MODE_OUTPUT_PP;
     g.Pull  = GPIO_NOPULL;
     g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    g.Pin   = LCD_CS_Pin;
+    HAL_GPIO_Init(LCD_GPIO_PortCS, &g);
 
-    g.Pin = LCD_SCL_Pin;  HAL_GPIO_Init(LCD_GPIO_PortSCL, &g);
-    g.Pin = LCD_SDA_Pin;  HAL_GPIO_Init(LCD_GPIO_PortSDA, &g);
-    g.Pin = LCD_CS_Pin;   HAL_GPIO_Init(LCD_GPIO_PortCS,  &g);
-
-    /* Idle levels: SCL high, CS high (deselected). */
-    LCD_SPI_SCL_SET;
+    /* Idle level: CS high (deselected). */
     LCD_CS_SET;
 }
 
