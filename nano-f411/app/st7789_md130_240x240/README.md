@@ -105,3 +105,7 @@ prints once at boot and the pattern phases log as they run, looping forever.
   **and** HW SPI1 (mode 3, buffered raster bursts) + bus switching
 - `src/blockwrite/blockwrite.h` - pixel-window helper
 - `src/backlight.c` / `backlight.h` - PB9/TIM4_CH4 PWM (+ duty getter)
+- `c542_st7789_md130_possible_issue.md` - analysis of why the hardware-SPI
+  phase of this module's C542-board port showed a dark screen while the
+  same module works here on both buses (SPI mode 0 vs mode 3), with
+  suggested experiments for when that board is available again
