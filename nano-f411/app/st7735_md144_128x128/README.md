@@ -108,13 +108,14 @@ single wiring table above for the per-pin HW roles.
   idle-high / rising-edge-sampling timing exactly.
 - **Clock**: SPI1 is clocked from APB2. This project overrides the weak
   `SystemClock_Config()` to run **APB2 at 100 MHz** (the F411's PCLK2 max;
-  the board default tree divides it to 50 MHz), so the default prescaler
-  **/2 drives the panel at 50 MHz** - the fastest SPI1 baud the board can
-  produce (minimum divider; also the F411 datasheet's SPI1 max of
-  50 Mbit/s). The core stays at 100 MHz and USART1 recomputes its baud
-  from the live PCLK2, so the console stays at 115200 (verified). If a
-  module shows corruption at 50 MHz, drop to /4 (25 MHz) or /8 (12.5 MHz -
-  near the ST7735S ~15 MHz write-cycle spec) via `LCD_SPI1_PRESC`.
+  the board default tree divides it to 50 MHz). The default prescaler is
+  **/4 = 25 MHz SCK** - fast yet the closest to the ST7735S ~15 MHz
+  write-cycle spec that stayed stable. The board's absolute fastest,
+  **/2 = 50 MHz** (the F411 datasheet's SPI1 max), is available via
+  `LCD_SPI1_PRESC=SPI_BAUDRATEPRESCALER_2` but outruns the panel spec;
+  **/8 = 12.5 MHz** is the conservative fallback. The core stays at
+  100 MHz and USART1 recomputes its baud from the live PCLK2, so the
+  console stays at 115200 (verified).
 - **Bus switching**: `LCD_UseSoftBus()` / `LCD_UseHwBus()` re-mux PA5/PA7
   (GPIO vs AF5), then `LCD_Reinit()` (reset + init sequence) re-frames the
   panel for the freshly selected bus - the same flow as md130. HW raster

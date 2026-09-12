@@ -11,11 +11,10 @@
           rising-edge-sampling timing the bit-bang produces), MSB first,
           NSS soft. CS=PB8 / DC=PA4 / RES=PA6 stay GPIO.
           APB2 = 100 MHz (this project overrides SystemClock_Config to run
-          PCLK2 at the F411 max): default prescaler /2 = 50 MHz SCK - the
-          fastest SPI1 baud the board can produce (and the datasheet's
-          SPI1 max, 50 Mbit/s). If a module shows corruption, drop to
-          /4 = 25 MHz or /8 = 12.5 MHz (closer to the ST7735S write-cycle
-          spec of ~15 MHz).
+          PCLK2 at the F411 max): default prescaler /4 = 25 MHz SCK.
+          /2 = 50 MHz is the fastest the board can produce (F411 SPI1 max)
+          but outruns the ST7735S write-cycle spec (~15 MHz); /8 = 12.5 MHz
+          is the conservative fallback.
 
   Raster bursts in HW mode stream through a 512-byte TX buffer (one
   HAL_SPI_Transmit per <=512 bytes); in SOFT mode bytes go straight to the
@@ -30,12 +29,13 @@
 /* Bytes of pixel data accumulated before one HAL_SPI_Transmit call (HW). */
 #define SPI_TX_BUF_SIZE 512U
 
-/* SPI1 baud prescaler: APB2 = 100 MHz (project clock override). /2 = 50 MHz
- * is the fastest SPI1 baud the board can produce (minimum divider, and the
- * F411 datasheet's SPI1 max of 50 Mbit/s); drop to /4 or /8 if the module
- * shows corruption. */
+/* SPI1 baud prescaler: APB2 = 100 MHz (project clock override). The
+ * default /4 = 25 MHz SCK; /2 = 50 MHz is the fastest the board can
+ * produce (F411 SPI1 max) but outruns the ST7735S write-cycle spec
+ * (~15 MHz) - raise to /2 only if a module proves it can take it, drop
+ * to /8 = 12.5 MHz if 25 MHz shows corruption. */
 #ifndef LCD_SPI1_PRESC
-#define LCD_SPI1_PRESC SPI_BAUDRATEPRESCALER_2
+#define LCD_SPI1_PRESC SPI_BAUDRATEPRESCALER_4
 #endif
 
 static uint8_t           s_tx_buf[SPI_TX_BUF_SIZE];
