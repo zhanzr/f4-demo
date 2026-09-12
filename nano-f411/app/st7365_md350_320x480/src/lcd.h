@@ -39,18 +39,20 @@
 #define LCD_CS_Pin          GPIO_PIN_8
 #define LCD_GPIO_PortBL     GPIOB
 #define LCD_BL_Pin          GPIO_PIN_9   /* TIM4_CH4 backlight PWM */
+#define LCD_GPIO_PortMISO   GPIOA
+#define LCD_MISO_Pin        GPIO_PIN_6   /* panel read-back (ID etc.) */
 
-/* ---- pin accessors (bit-banged SPI) ---- */
-#define LCD_SPI_SCL_SET  HAL_GPIO_WritePin(LCD_GPIO_PortSCL, LCD_SCL_Pin, GPIO_PIN_SET)
-#define LCD_SPI_SCL_CLR  HAL_GPIO_WritePin(LCD_GPIO_PortSCL, LCD_SCL_Pin, GPIO_PIN_RESET)
-#define LCD_SPI_SDA_SET  HAL_GPIO_WritePin(LCD_GPIO_PortSDA, LCD_SDA_Pin, GPIO_PIN_SET)
-#define LCD_SPI_SDA_CLR  HAL_GPIO_WritePin(LCD_GPIO_PortSDA, LCD_SDA_Pin, GPIO_PIN_RESET)
-#define LCD_RS_SET       HAL_GPIO_WritePin(LCD_GPIO_PortRS,  LCD_RS_Pin,  GPIO_PIN_SET)
-#define LCD_RS_CLR       HAL_GPIO_WritePin(LCD_GPIO_PortRS,  LCD_RS_Pin,  GPIO_PIN_RESET)
-#define LCD_RST_SET      HAL_GPIO_WritePin(LCD_GPIO_PortRST, LCD_RST_Pin, GPIO_PIN_SET)
-#define LCD_RST_CLR      HAL_GPIO_WritePin(LCD_GPIO_PortRST, LCD_RST_Pin, GPIO_PIN_RESET)
-#define LCD_CS_SET       HAL_GPIO_WritePin(LCD_GPIO_PortCS,  LCD_CS_Pin,  GPIO_PIN_SET)
-#define LCD_CS_CLR       HAL_GPIO_WritePin(LCD_GPIO_PortCS,  LCD_CS_Pin,  GPIO_PIN_RESET)
+/* ---- pin accessors (bit-banged SPI, direct BSRR writes) ---- */
+#define LCD_SPI_SCL_SET  (LCD_GPIO_PortSCL->BSRR = LCD_SCL_Pin)
+#define LCD_SPI_SCL_CLR  (LCD_GPIO_PortSCL->BSRR = (uint32_t)LCD_SCL_Pin << 16)
+#define LCD_SPI_SDA_SET  (LCD_GPIO_PortSDA->BSRR = LCD_SDA_Pin)
+#define LCD_SPI_SDA_CLR  (LCD_GPIO_PortSDA->BSRR = (uint32_t)LCD_SDA_Pin << 16)
+#define LCD_RS_SET       (LCD_GPIO_PortRS->BSRR  = LCD_RS_Pin)
+#define LCD_RS_CLR       (LCD_GPIO_PortRS->BSRR  = (uint32_t)LCD_RS_Pin << 16)
+#define LCD_RST_SET      (LCD_GPIO_PortRST->BSRR = LCD_RST_Pin)
+#define LCD_RST_CLR      (LCD_GPIO_PortRST->BSRR = (uint32_t)LCD_RST_Pin << 16)
+#define LCD_CS_SET       (LCD_GPIO_PortCS->BSRR  = LCD_CS_Pin)
+#define LCD_CS_CLR       (LCD_GPIO_PortCS->BSRR  = (uint32_t)LCD_CS_Pin << 16)
 
 /* ---- 24-bit colors (RGB888, converted to RGB565 by LCD_SetColor) ---- */
 #define LCD_WHITE       0xFFFFFF

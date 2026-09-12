@@ -28,7 +28,7 @@ the SPI1 peripheral ("hardware SPI" @ 50 MHz).
 | DC  | PA4 | Data/command select |
 | CS  | PB8 | Chip select |
 | BL  | PB9 | Backlight - **TIM4_CH4 PWM, 15%** |
-| MISO | PA6 | Module read-back line (**unused** by this TX-only driver; maps to SPI1_MISO at AF5 for full-duplex read-back) |
+| MISO | PA6 | Module read-back line - used for the panel **IC ID** read (HW bus; reads are not supported by the soft bit-bang) |
 
 ### HW SPI1 role of the shared pins
 
@@ -60,16 +60,18 @@ Pattern set (per pass, live FPS counter throughout):
    current driving method.
 2. **Info page** (normal, then **inverted**): compiler, build date, CPU
    frequency, drive method (soft bit-bang / HW SPI1), the IO map, live
-   backlight duty, the UID, and the measured **"solid xx color: xx ms"**
-   durations from this pass.
+   backlight duty, the UID, the panel **IC ID** read over MISO (0xD3:
+   `1D E5 80` on this unit; reads only work on the HW bus - the panel
+   does not drive MISO during bit-banged reads), and the measured
+   **"xx : xx ms"** solid-fill durations from this pass.
 3. **Gradient** - animated HSV hue sweep across the full color wheel
    (4 s per sweep).
 4. **LED test** - board LED PC13 on/off.
 
 All with a **live FPS counter** drawn transparently in the bottom band.
-The bus difference is visible in the measured fills (soft ~1.2 s per
-solid fill vs ~0.8 s on HW SPI1 @ 50 MHz - the per-pixel CS/transfer
-overhead dominates both; the wire time at 50 MHz is negligible).
+Measured fills: soft ~450 ms per solid fill vs ~183 ms on HW SPI1 @ 50
+MHz (16-bit burst frames; the wire floor is ~50 ms - the rest is
+per-byte polling overhead).
 
 ## Backlight PWM
 
@@ -107,10 +109,13 @@ prints once at boot and the pattern phases log as they run, looping forever.
   115200. The on-screen info page shows the active rate as an integer
   ("SPI1 50 MHz (HW)").
 - **Bus switching**: `LCD_UseSoftBus()` / `LCD_UseHwBus()` re-mux PA5/PA7
-  (GPIO vs AF5), then `LCD_Reinit()` re-frames the panel for the freshly
-  selected bus. HW raster bursts stream through a 512-byte TX buffer (one
-  `HAL_SPI_Transmit` per <=512 bytes); commands stay unbuffered
-  single-byte transmits.
+  (GPIO vs AF5; PA6 = MISO also muxed on HW), then `LCD_Reinit()`
+  re-frames the panel for the freshly selected bus. HW raster bursts
+  stream through a 512-byte TX buffer; inside a burst pairs of bytes go
+  out as 16-bit frames (DFF switched to 16-bit only while the SPI is
+  disabled, per the reference manual), which halves the per-byte
+  DR-write overhead. After each burst the RX echoes are drained and any
+  overrun cleared, keeping the line clean for MISO read-back.
 
 ## Files
 

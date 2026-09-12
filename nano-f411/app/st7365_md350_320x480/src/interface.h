@@ -37,9 +37,13 @@ void LCD_WriteDataFast(uint8_t data);   /* raw byte, caller manages CS/DC */
 void LCD_BeginData(void);                /* DC high, CS low, for raster bursts */
 void LCD_EndData(void);                  /* CS high after a burst */
 
+/* Read panel data over MISO (both buses): sends cmd, clocks nskip dummy
+ * bytes, then reads nread bytes into out. */
+void LCD_ReadBytes(uint8_t cmd, uint8_t *out, uint8_t nskip, uint8_t nread);
+
 /* ---- bus selection (SOFT bit-bang vs HW SPI1) ---- */
 void    LCD_UseSoftBus(void);   /* re-mux PA5/PA7 to GPIO, idle high      */
-void    LCD_UseHwBus(void);     /* re-mux PA5/PA7 to SPI1 AF5 + init      */
+void    LCD_UseHwBus(void);     /* re-mux PA5/PA6/PA7 to SPI1 AF5 + init  */
 uint8_t LCD_BusIsHw(void);      /* 1 while the HW SPI1 bus is selected    */
 unsigned long LCD_HwSpiKHz(void); /* active SPI1 baud in kHz (info page)  */
 void    SPI_HW_Flush(void);     /* drain the HW TX buffer (blocking)      */

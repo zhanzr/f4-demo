@@ -298,6 +298,25 @@ static void info_demo(uint32_t ms, uint8_t invert)
     }
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
+    /* Panel IC ID, read over MISO (0xD3 read-ID4: 1 dummy + 3 ID bytes;
+     * the 0x04 RDDID command is not supported by this controller). */
+    {
+        uint8_t id[3] = { 0, 0, 0 };
+        LCD_ReadBytes(0xD3, id, 1U, 3U);
+        printf("[LCD] info: IC ID (0xD3): %02X %02X %02X\r\n",
+               id[0], id[1], id[2]);
+        if (id[0] == 0xFFU && id[1] == 0xFFU && id[2] == 0xFFU)
+        {
+            snprintf(buf, sizeof buf, "ID --");
+        }
+        else
+        {
+            snprintf(buf, sizeof buf, "ID %02X %02X %02X",
+                     id[0], id[1], id[2]);
+        }
+        LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
+    }
+
     snprintf(buf, sizeof buf, "SCL=PA5 SDA=PA7");
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
@@ -315,7 +334,7 @@ static void info_demo(uint32_t ms, uint8_t invert)
      * reflect the current driving method. */
     for (int i = 0; i < 5; i++)
     {
-        snprintf(buf, sizeof buf, "solid %s color: %lu ms",
+        snprintf(buf, sizeof buf, "%-5s : %4lu ms",
                  g_solid_name[i], (unsigned long)g_solid_ms[i]);
         LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
     }

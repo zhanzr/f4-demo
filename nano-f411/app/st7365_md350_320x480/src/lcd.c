@@ -152,81 +152,83 @@ void BlockWrite(uint16_t Xstart, uint16_t Xend, uint16_t Ystart, uint16_t Yend)
 }
 
 /* =====================================================================
-   Vendor demo screens (lcd.c) - identical geometry/ordering.
+   Vendor demo screens (lcd.c) - identical geometry/ordering. The pixel
+   loops stream bytes inside one BeginData/EndData burst (no per-pixel
+   CS/DC toggling, HW bursts batch into 512-byte chunks).
    ===================================================================== */
 void DispColor(uint32_t color)
 {
     int i, j;
     BlockWrite(COL_Pre, COL + COL_Pre - 1, ROW_Pre, ROW + ROW_Pre - 1);
-    LCD_CS_CLR;
-    LCD_RS_SET;
+    LCD_BeginData();
     for (i = 0; i < ROW; i++)
     {
         for (j = 0; j < COL; j++)
         {
-            SendData(color);
+            LCD_WriteDataFast((uint8_t)(color >> 8));
+            LCD_WriteDataFast((uint8_t)color);
         }
     }
-    LCD_CS_SET;
+    LCD_EndData();
 }
 
 void DispFrame(void)
 {
     int i, j;
     BlockWrite(COL_Pre, COL + COL_Pre - 1, ROW_Pre, ROW + ROW_Pre - 1);
-    LCD_CS_CLR;
-    LCD_RS_SET;
-    SendData(0xF800);
-    for (i = 0; i < COL - 2; i++) { SendData(0xFFFF); }
-    SendData(0x001F);
+    LCD_BeginData();
+    LCD_WriteDataFast(0xF8); LCD_WriteDataFast(0x00);
+    for (i = 0; i < COL - 2; i++) { LCD_WriteDataFast(0xFF); LCD_WriteDataFast(0xFF); }
+    LCD_WriteDataFast(0x00); LCD_WriteDataFast(0x1F);
     for (j = 0; j < ROW - 2; j++)
     {
-        SendData(0xF800);
-        for (i = 0; i < COL - 2; i++) { SendData(0x0000); }
-        SendData(0x001F);
+        LCD_WriteDataFast(0xF8); LCD_WriteDataFast(0x00);
+        for (i = 0; i < COL - 2; i++) { LCD_WriteDataFast(0x00); LCD_WriteDataFast(0x00); }
+        LCD_WriteDataFast(0x00); LCD_WriteDataFast(0x1F);
     }
-    SendData(0xF800);
-    for (i = 0; i < COL - 2; i++) { SendData(0xFFFF); }
-    SendData(0x001F);
-    LCD_CS_SET;
+    LCD_WriteDataFast(0xF8); LCD_WriteDataFast(0x00);
+    for (i = 0; i < COL - 2; i++) { LCD_WriteDataFast(0xFF); LCD_WriteDataFast(0xFF); }
+    LCD_WriteDataFast(0x00); LCD_WriteDataFast(0x1F);
+    LCD_EndData();
 }
 
 void DispGrayHor16(void)
 {
     int i, j, k;
     BlockWrite(COL_Pre, COL + COL_Pre - 1, ROW_Pre, ROW + ROW_Pre - 1);
-    LCD_CS_CLR;
-    LCD_RS_SET;
+    LCD_BeginData();
     for (i = 0; i < ROW; i++)
     {
-        for (j = 0; j < COL % 16; j++) { SendData(0); }
+        for (j = 0; j < COL % 16; j++) { LCD_WriteDataFast(0); LCD_WriteDataFast(0); }
         for (j = 0; j < 16; j++)
         {
+            uint16_t c = (uint16_t)(((((j * 2) << 3) | ((j * 4) >> 3)) << 8) |
+                                    (((j * 4) << 5) | (j * 2)));
             for (k = 0; k < COL / 16; k++)
             {
-                SendData((((((j * 2) << 3) | ((j * 4) >> 3)) << 8) |
-                          (((j * 4) << 5) | (j * 2))));
+                LCD_WriteDataFast((uint8_t)(c >> 8));
+                LCD_WriteDataFast((uint8_t)c);
             }
         }
     }
-    LCD_CS_SET;
+    LCD_EndData();
 }
 
 void DispBand(void)
 {
-    static const uint32_t color[8] = { 0xF800, 0xF800, 0x07E0, 0x07E0,
+    static const uint16_t color[8] = { 0xF800, 0xF800, 0x07E0, 0x07E0,
                                        0x001F, 0x001F, 0xFFFF, 0xFFFF };
     int i, j, k;
     BlockWrite(COL_Pre, COL + COL_Pre - 1, ROW_Pre, ROW + ROW_Pre - 1);
-    LCD_CS_CLR;
-    LCD_RS_SET;
+    LCD_BeginData();
     for (i = 0; i < 8; i++)
     {
         for (j = 0; j < ROW / 8; j++)
         {
             for (k = 0; k < COL; k++)
             {
-                SendData(color[i]);
+                LCD_WriteDataFast((uint8_t)(color[i] >> 8));
+                LCD_WriteDataFast((uint8_t)color[i]);
             }
         }
     }
@@ -234,10 +236,11 @@ void DispBand(void)
     {
         for (k = 0; k < COL; k++)
         {
-            SendData(color[7]);
+            LCD_WriteDataFast((uint8_t)(color[7] >> 8));
+            LCD_WriteDataFast((uint8_t)color[7]);
         }
     }
-    LCD_CS_SET;
+    LCD_EndData();
 }
 
 void StopDelay(uint16_t ms)
