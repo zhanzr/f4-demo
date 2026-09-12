@@ -3,18 +3,20 @@
   MD350 module: ST7365P 3.5" 320x480 (windows at COL_Pre = ROW_Pre = 0,
   MADCTL 0x48 portrait, 16bpp).
 
-  Pattern set, driven by the SOFT bit-banged bus:
+  Pattern set, on BOTH drive methods (soft bit-bang / HW SPI1 @ 50 MHz):
     - big-font banner page (8x16 font), then the full pattern set:
       info page (normal + inverted), TEST_STAND screens,
       HSV gradient sweep, LED test - with a live FPS counter throughout.
-    - the 320x480 frame is 300 KB per full pass over the bit-banged bus,
-      so the solid fills and gradient frames take on the order of a
-      second each on the soft bus.
 
   Wiring: SCL=PA5, SDA=PA7, RES=PA3, DC=PA4, CS=PB8, BL=PB9 (TIM4_CH4
-  PWM, 15%). MISO=PA6 exists on the module but is not used by the
-  write-only soft driver (it maps to SPI1_MISO at AF5 for a future HW
-  SPI1 path).
+  PWM, 15%). MISO=PA6 exists on the module but is not used by this
+  TX-only driver (it maps to SPI1_MISO at AF5 for full-duplex read-back).
+
+  Clock: SystemClock_Config is overridden (weak hook) to run APB2 at
+  100 MHz instead of the board-default 50 MHz, so SPI1 clocks the panel
+  at 50 MHz (prescaler /2 - the F411 SPI1 max). The core stays at
+  100 MHz; USART1 (APB2) recomputes its baud from the live PCLK2, so the
+  console stays at 115200.
 */
 
 #include <stdio.h>
@@ -24,6 +26,39 @@
 #include "interface.h"
 #include "lcd/lcd_font_1608.h"
 #include "backlight.h"
+
+/* ---- clock override: APB2 = 100 MHz (HCLK/1) for the 50 MHz SPI1 ---- */
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    RCC_OscInitStruct.HSEState       = RCC_HSE_ON;
+    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
+    RCC_OscInitStruct.PLL.PLLM       = 25U;
+    RCC_OscInitStruct.PLL.PLLN       = 200U;
+    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV2;
+    RCC_OscInitStruct.PLL.PLLQ       = 4U;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                     | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;   /* 50 MHz (max)   */
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;   /* 100 MHz (max)  */
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
 
 #define SCREEN_W   LCD_Width     /* 320 */
 #define SCREEN_H   LCD_Height    /* 480 */
@@ -205,8 +240,8 @@ static void info_demo(uint32_t ms, uint8_t invert)
 
     printf("[LCD] info%s: compiler=%s build=%s %s\r\n",
            invert ? " (inverted)" : "", comp, __DATE__, __TIME__);
-    printf("[LCD] info: freq=%lu MHz drive=soft bit-bang BL=%u%%\r\n",
-           mhz, (unsigned)duty);
+    printf("[LCD] info: freq=%lu MHz drive=%s BL=%u%%\r\n",
+           mhz, LCD_BusIsHw() ? "HW SPI1" : "soft bit-bang", (unsigned)duty);
     printf("[LCD] info: UID=%08lX%08lX%08lX\r\n",
            (unsigned long)uid[0], (unsigned long)uid[1], (unsigned long)uid[2]);
 
@@ -233,7 +268,15 @@ static void info_demo(uint32_t ms, uint8_t invert)
     snprintf(buf, sizeof buf, "Freq %lu MHz", mhz);
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
-    snprintf(buf, sizeof buf, "Bus soft (bit-bang)");
+    if (LCD_BusIsHw())
+    {
+        snprintf(buf, sizeof buf, "SPI1 %lu MHz (HW)",
+                 LCD_HwSpiKHz() / 1000UL);
+    }
+    else
+    {
+        snprintf(buf, sizeof buf, "Bus soft (bit-bang)");
+    }
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
     snprintf(buf, sizeof buf, "SCL=PA5 SDA=PA7");
@@ -316,7 +359,7 @@ int main(void)
     printf("\r\n==== nano-f411 (STM32F411CEU6) st7365_md350_320x480 @ %lu MHz ====\r\n",
            (unsigned long)(SystemCoreClock / 1000000UL));
     printf("ST7365P 3.5\" 320x480 (MD350, MADCTL 0x48 portrait), "
-           "4-wire soft SPI:\r\n");
+           "4-wire SPI (soft bit-bang + HW SPI1 @ 50 MHz):\r\n");
     printf("SCL=PA5 SDA=PA7 RES=PA3 DC=PA4 CS=PB8 BL=PB9(PWM 15%%) "
            "MISO=PA6(unused)\r\n");
 
@@ -330,10 +373,25 @@ int main(void)
     {
         /* ---- SOFT (bit-banged) bus ---- */
         printf("[LCD] phase: SOFT banner\r\n");
+        LCD_UseSoftBus();
+        Backlight_SetDuty(15U);   /* dimmer during the slow bit-bang pass */
+        LCD_Reinit();         /* re-frame the panel for the soft bus */
         banner_page("MD350 320x480", "soft SPI test",
                     LCD_YELLOW, LCD_BLUE, 3000);
 
         printf("[LCD] running patterns on SOFT SPI\r\n");
+        run_patterns();
+
+        /* ---- HARDWARE (SPI1 @ 50 MHz) bus ---- */
+        printf("[LCD] phase: HARDWARE banner\r\n");
+        LCD_UseHwBus();
+        Backlight_SetDuty(15U);
+        LCD_Reinit();         /* re-frame the panel for the HW bus */
+        banner_page("MD350 320x480", "HW SPI1 test",
+                    LCD_BLACK, LCD_CYAN, 3000);
+
+        printf("[LCD] running patterns on HARDWARE SPI1 @ %lu MHz\r\n",
+               LCD_HwSpiKHz() / 1000UL);
         run_patterns();
     }
 

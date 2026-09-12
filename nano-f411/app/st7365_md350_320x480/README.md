@@ -2,8 +2,9 @@
 
 Drives the **MD350** 3.5" **320x480** module (**ST7365P** controller,
 ST7796-register-compatible) on the **nano-f411** board (STM32F411CEU6 @
-100 MHz) over a 4-wire SPI bus, driven by the **soft (bit-banged)**
-method.
+100 MHz) over a 4-wire SPI bus, with two interchangeable drive methods
+compared back to back in one demo loop: bit-banged GPIO ("soft SPI") and
+the SPI1 peripheral ("hardware SPI" @ 50 MHz).
 
 ## Controller notes
 
@@ -27,29 +28,44 @@ method.
 | DC  | PA4 | Data/command select |
 | CS  | PB8 | Chip select |
 | BL  | PB9 | Backlight - **TIM4_CH4 PWM, 15%** |
-| MISO | PA6 | Module read-back line (**unused** by this write-only soft driver; maps to SPI1_MISO at AF5 for a future HW SPI1 path) |
+| MISO | PA6 | Module read-back line (**unused** by this TX-only driver; maps to SPI1_MISO at AF5 for full-duplex read-back) |
+
+### HW SPI1 role of the shared pins
+
+| LCD pin | MCU pin | HW SPI1 (AF5) role |
+| ------- | ------- | ------------------ |
+| SCL | PA5 | **SPI1_SCK** (hardware) |
+| SDA | PA7 | **SPI1_MOSI** (hardware) |
+| RES | PA3 | stays GPIO |
+| DC  | PA4 | stays GPIO - driven per byte/transfer |
+| CS  | PB8 | stays GPIO software CS |
+| MISO | PA6 | maps to **SPI1_MISO** (AF5) - unused by this TX-only driver |
 
 ## What it does
 
-The demo loops forever on the soft bus:
+The demo loops forever, running the **same pattern set on BOTH drive
+methods**:
 
 1. Big-font banner **"MD350 320x480 / soft SPI test"** (yellow on blue,
-   3 s).
-2. **Info page** (normal, then **inverted**): compiler, build date, CPU
-   frequency, drive method, the IO map, live backlight duty and the UID.
-3. **TEST_STAND** (500 ms between screens): window-border **frame**,
+   3 s), then the full pattern set on the **bit-banged** bus.
+2. Big-font banner **"MD350 320x480 / HW SPI1 test"** (black on cyan,
+   3 s), then the same pattern set on **SPI1 @ 50 MHz**.
+
+Pattern set (per pass, live FPS counter throughout):
+
+1. **Info page** (normal, then **inverted**): compiler, build date, CPU
+   frequency, drive method (soft bit-bang / HW SPI1), the IO map, live
+   backlight duty and the UID.
+2. **TEST_STAND** (500 ms between screens): window-border **frame**,
    **16-level gray** horizontal bars, **color bands**, then full **red,
    green, blue, white, black** fills.
-4. **Gradient** - animated HSV hue sweep across the full color wheel
+3. **Gradient** - animated HSV hue sweep across the full color wheel
    (4 s per sweep).
-5. **LED test** - board LED PC13 on/off.
+4. **LED test** - board LED PC13 on/off.
 
 All with a **live FPS counter** drawn transparently in the bottom band.
-
-Note: a 320x480 frame is 153,600 pixels (300 KB) - over the bit-banged
-bus the full-window fills and gradient frames take on the order of a
-second each (single-digit fps), which is inherent to the soft method at
-this panel size.
+The bus difference is dramatic at this panel size (300 KB per frame):
+single-digit fps on the bit-banged bus vs ~20 fps on HW SPI1 @ 50 MHz.
 
 ## Backlight PWM
 
@@ -73,23 +89,35 @@ prints once at boot and the pattern phases log as they run, looping forever.
 > unreliable reading. Flashing, reset and the VCP console all work fine
 > (verified on hardware).
 
-## Hardware SPI (future work)
+## Hardware SPI (implemented)
 
-Not implemented yet (the soft method is the current focus). The module's
-MISO line maps to PA6 = SPI1_MISO at AF5, so a future HW path can run
-SPI1 in full duplex (SCK=PA5, MOSI=PA7, MISO=PA6) - useful for panel ID
-read-back as well as faster fills. The panel protocol (4-wire with a DC
-pin) needs no framing tricks - plain 8-bit frames, same as the board's
-other 4-wire LCD projects.
+- **SPI1 AF5** on PA5 (SCK) / PA7 (MOSI), mode 3 (CPOL=1, CPHA=1 - the
+  same idle-high / rising-edge-sampling timing the bit-bang produces),
+  8-bit MSB-first, NSS soft. DC/RES/CS stay GPIO.
+- **Clock**: APB2 = 100 MHz (this project overrides the weak
+  `SystemClock_Config()` to run PCLK2 at the F411 max), default prescaler
+  **/2 = 50 MHz SCK** (the F411 SPI1 max, first-try setting per the
+  module's behavior); `LCD_SPI1_PRESC=SPI_BAUDRATEPRESCALER_4` drops it
+  to 25 MHz if a unit needs a slower rate. The core stays at 100 MHz and
+  USART1 recomputes its baud from the live PCLK2, so the console stays at
+  115200. The on-screen info page shows the active rate as an integer
+  ("SPI1 50 MHz (HW)").
+- **Bus switching**: `LCD_UseSoftBus()` / `LCD_UseHwBus()` re-mux PA5/PA7
+  (GPIO vs AF5), then `LCD_Reinit()` re-frames the panel for the freshly
+  selected bus. HW raster bursts stream through a 512-byte TX buffer (one
+  `HAL_SPI_Transmit` per <=512 bytes); commands stay unbuffered
+  single-byte transmits.
 
 ## Files
 
-- `src/main.c` - pattern set on the soft bus: banner, info (normal +
+- `src/main.c` - pattern set on both buses: banner, info (normal +
   inverted), TEST_STAND, HSV gradient, LED test, FPS counter
 - `src/lcd.c` / `lcd.h` - ST7365P init + 320x480/COL_Pre=ROW_Pre=0
   geometry + drawing API + `LCD_Reinit`
 - `src/lcd/lcd_fonts.c` / `lcd_fonts.h` - ASCII 6x12 font
 - `src/lcd/lcd_font_1608.c` / `lcd_font_1608.h` - ASCII 8x16 banner font
-- `src/interface.c` / `interface.h` - 4-wire soft-SPI primitives
+- `src/interface.c` / `interface.h` - 4-wire bus primitives: soft
+  bit-bang **and** HW SPI1 (mode 3, buffered raster bursts) + bus
+  switching
 - `src/blockwrite/blockwrite.h` - pixel-window helper
 - `src/backlight.c` / `backlight.h` - PB9/TIM4_CH4 PWM (+ duty getter)
