@@ -1,7 +1,7 @@
 /*
   ili9163c_md144_128x128 main for the nano-f411 (STM32F411CEU6 @ 100 MHz).
-  ILI9163C 1.44" 128x128 module (MD144 connector), driven by the SOFT
-  bit-banged bus:
+  ILI9163C 1.44" 128x128 module (MD144 connector), same pattern set on
+  BOTH drive methods:
 
     - big-font banner page (8x16 font), then the full pattern set:
       info page (normal + inverted), TEST_STAND screens,
@@ -13,12 +13,53 @@
   on-module (always on after power).
 
   Wiring: SCL=PA5, SDA=PA7, RES=PA6, CS=PB8.
+
+  Clock: SystemClock_Config is overridden (weak hook) to run APB2 at
+  100 MHz instead of the board-default 50 MHz, so the HW SPI1 path can
+  clock the panel at 12.5 MHz (prescaler /8; the F411 SPI only produces
+  8/16-bit frames, so the HW path transmits 16-bit words packed with the
+  9-bit frame bitstream). The core stays at 100 MHz; USART1 (APB2)
+  recomputes its baud from the live PCLK2, so the console stays at 115200.
 */
 
 #include <stdio.h>
 #include "board.h"
 #include "lcd.h"
+#include "interface.h"
 #include "lcd/lcd_font_1608.h"
+
+/* ---- clock override: APB2 = 100 MHz (HCLK/1) for the HW SPI1 path ---- */
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    RCC_OscInitStruct.HSEState       = RCC_HSE_ON;
+    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
+    RCC_OscInitStruct.PLL.PLLM       = 25U;
+    RCC_OscInitStruct.PLL.PLLN       = 200U;
+    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV2;
+    RCC_OscInitStruct.PLL.PLLQ       = 4U;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                     | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;   /* 50 MHz (max)   */
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;   /* 100 MHz (max)  */
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
 
 #define SCREEN_W   LCD_Width     /* 128 */
 #define SCREEN_H   LCD_Height    /* 128 */
@@ -200,8 +241,8 @@ static void info_demo(uint32_t ms, uint8_t invert)
 
     printf("[LCD] info%s: compiler=%s build=%s %s\r\n",
            invert ? " (inverted)" : "", comp, __DATE__, __TIME__);
-    printf("[LCD] info: freq=%lu MHz drive=soft bit-bang (3-wire 9-bit)\r\n",
-           mhz);
+    printf("[LCD] info: freq=%lu MHz drive=%s\r\n",
+           mhz, LCD_BusIsHw() ? "HW SPI1 (packed 9-bit)" : "soft bit-bang");
     printf("[LCD] info: UID=%08lX%08lX%08lX\r\n",
            (unsigned long)uid[0], (unsigned long)uid[1], (unsigned long)uid[2]);
 
@@ -228,7 +269,16 @@ static void info_demo(uint32_t ms, uint8_t invert)
     snprintf(buf, sizeof buf, "Freq %lu MHz", mhz);
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
-    snprintf(buf, sizeof buf, "Bus soft (3-wire)");
+    if (LCD_BusIsHw())
+    {
+        unsigned long khz = LCD_HwSpiKHz();
+        snprintf(buf, sizeof buf, "SPI1 %lu.%lu MHz (HW)",
+                 khz / 1000UL, (khz % 1000UL) / 100UL);
+    }
+    else
+    {
+        snprintf(buf, sizeof buf, "Bus soft (3-wire)");
+    }
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
     snprintf(buf, sizeof buf, "SCL=PA5 SDA=PA7");
@@ -278,7 +328,7 @@ static void banner_page(const char *l1, const char *l2,
 }
 
 /* --------------------------------------------------------------------- */
-/* Full test-pattern set (ported from the md130 demo).                   */
+/* Full test-pattern set.                                                */
 static void run_patterns(void)
 {
     printf("[LCD] phase: info\r\n");
@@ -316,12 +366,25 @@ int main(void)
 
     while (1)
     {
-        /* ---- SOFT (bit-banged) bus: the verified drive method ---- */
+        /* ---- SOFT (bit-banged) bus ---- */
         printf("[LCD] phase: SOFT banner\r\n");
+        LCD_UseSoftBus();
+        LCD_Reinit();         /* re-frame the panel for the soft bus */
         banner_page("now will do", "soft SPI test",
                     LCD_YELLOW, LCD_BLUE, 3000);
 
         printf("[LCD] running patterns on SOFT SPI\r\n");
+        run_patterns();
+
+        /* ---- HARDWARE (SPI1, packed 9-bit frames) bus ---- */
+        printf("[LCD] phase: HARDWARE banner\r\n");
+        LCD_UseHwBus();
+        LCD_Reinit();         /* re-frame the panel for the HW bus */
+        banner_page("now will do", "HW SPI1 test",
+                    LCD_BLACK, LCD_CYAN, 3000);
+
+        printf("[LCD] running patterns on HARDWARE SPI1 @ %lu.%lu MHz\r\n",
+               LCD_HwSpiKHz() / 1000UL, (LCD_HwSpiKHz() % 1000UL) / 100UL);
         run_patterns();
     }
 

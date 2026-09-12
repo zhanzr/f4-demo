@@ -101,7 +101,8 @@ void LCD_IC_Init(void)
     WriteData(0x9F);
 
     WriteComm(0x36);              /* Scanning Direction (MADCTL) */
-    WriteData(0xC8);
+    WriteData(0x08);              /* 0x08 = 180 deg rotated vs 0xC8
+                                     (MY+MX toggled, BGR kept) */
 
     WriteComm(0xB7);              /* Source Output Direction */
     WriteData(0x00);
