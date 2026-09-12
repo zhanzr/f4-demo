@@ -69,11 +69,14 @@ void LCD_GPIOInit(void)
     g.Mode  = GPIO_MODE_OUTPUT_PP;
     g.Pull  = GPIO_NOPULL;
     g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    g.Pin   = LCD_CS_Pin;
-    HAL_GPIO_Init(LCD_GPIO_PortCS, &g);
+    g.Pin   = LCD_CS_Pin | GPIO_PIN_6;   /* PA6 = module DC: vendor drives
+                                            it push-pull and never toggles
+                                            (idle low); keep it defined. */
+    HAL_GPIO_Init(GPIOA, &g);
 
-    /* Idle level: CS high (deselected). */
+    /* Idle level: CS high (deselected), DC low (as the vendor leaves it). */
     LCD_CS_SET;
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
 }
 
 /* No reset pin on this module: the vendor sequence settles CS (high,
@@ -219,7 +222,7 @@ void LCD_IC_Init(void)
 
     WriteComm(0x11);              /* Sleep out */
     CS_SET();
-    HAL_Delay(20);
+    HAL_Delay(120);               /* datasheet: 120 ms after sleep out */
 
     WriteComm(0x29);              /* Display on */
     CS_SET();
@@ -236,10 +239,19 @@ void LCD_Init(void)
     DispColor(BLACK);
 }
 
-/* Reset + full re-init sequence: the panel's controller is reset so the
- * init sequence applies cleanly. */
+/* Re-init an already-running panel. NV3030B has no software-reset
+ * command (public set: 00h, 04h-0Fh, 10h-13h, ... no 01h), so sleep in
+ * is the closest equivalent: it stops the DC-DC, oscillator and scan -
+ * the next init sequence then starts from a clean state. Without this,
+ * re-initializing a live panel can latch it (needs a power cycle). */
 void LCD_Reinit(void)
 {
+    WriteComm(0x28);              /* display off */
+    CS_SET();
+    WriteComm(0x10);              /* sleep in */
+    CS_SET();
+    HAL_Delay(20);                /* datasheet: >=5 ms before new cmds */
+
     LCD_RESET();
     LCD_IC_Init();
 }

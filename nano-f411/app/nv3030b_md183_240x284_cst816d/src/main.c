@@ -39,6 +39,39 @@
 #define LED_HALF   1000          /* LED test dwell (ms)                    */
 #define INFO_DY    13            /* info page line pitch                   */
 
+/* ---- clock override: APB2 = 100 MHz (HCLK/1) for the 50 MHz SPI1 ---- */
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    RCC_OscInitStruct.HSEState       = RCC_HSE_ON;
+    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
+    RCC_OscInitStruct.PLL.PLLM       = 25U;
+    RCC_OscInitStruct.PLL.PLLN       = 200U;
+    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV2;
+    RCC_OscInitStruct.PLL.PLLQ       = 4U;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                     | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;   /* 50 MHz (max)   */
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;   /* 100 MHz (max)  */
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
 /* --------------------------------------------------------------------- */
 /* Touch printout: polls the CST816D and prints state/X/Y on the serial
  * port (on touch-down, and on release).                                 */
@@ -209,6 +242,22 @@ static const char *const g_solid_name[5] =
     "RED", "GREEN", "BLUE", "WHITE", "BLACK"
 };
 
+/* kHz -> "2.1 MHz" / "50 MHz" text (shared by console + info page). */
+static const char *mhz_text(unsigned long khz)
+{
+    static char t[16];
+    if (khz % 1000UL == 0UL)
+    {
+        snprintf(t, sizeof t, "%lu MHz", khz / 1000UL);
+    }
+    else
+    {
+        snprintf(t, sizeof t, "%lu.%lu MHz",
+                 khz / 1000UL, (khz % 1000UL) / 100UL);
+    }
+    return t;
+}
+
 static void TEST_STAND(void)
 {
     const uint32_t solid_color[5] = { RED, GREEN, BLUE, WHITE, BLACK };
@@ -293,26 +342,37 @@ static void info_demo(uint32_t ms, uint8_t invert)
 
     if (LCD_BusIsHw())
     {
-        snprintf(buf, sizeof buf, "SPI1 %lu MHz (HW)",
-                 LCD_HwSpiKHz() / 1000UL);
+        snprintf(buf, sizeof buf, "HW SPI1 %s",
+                 mhz_text(LCD_HwSpiKHz()));
     }
     else
     {
-        snprintf(buf, sizeof buf, "Bus soft (bit-bang)");
+        snprintf(buf, sizeof buf, "Soft %s",
+                 mhz_text(LCD_SoftKHz()));
     }
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
     snprintf(buf, sizeof buf, "SCL=PA5 SDA=PA7");
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
-    snprintf(buf, sizeof buf, "CS=PA4 DC=PA6(nc)");
+    snprintf(buf, sizeof buf, "CS=PA4 DC=PA6(low)");
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
     snprintf(buf, sizeof buf, "TOUCH PA2/PA3");
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
     snprintf(buf, sizeof buf, "UID %08lX", (unsigned long)uid[0]);
-    LCD_DisplayString(ix, (uint16_t)y, buf);
+    LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
+
+    /* Solid-color fill durations, measured earlier in this pass (the
+     * TEST_STAND solids run before the info pages) - so they always
+     * reflect the current driving method. */
+    for (int i = 0; i < 5; i++)
+    {
+        snprintf(buf, sizeof buf, "%-5s : %4lu ms",
+                 g_solid_name[i], (unsigned long)g_solid_ms[i]);
+        LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
+    }
 
     g_fps_color = LCD_WHITE;              /* restore default FPS glyph color */
 
@@ -386,26 +446,48 @@ int main(void)
     printf("\r\n==== nano-f411 (STM32F411CEU6) nv3030b_md183_240x284_cst816d @ %lu MHz ====\r\n",
            (unsigned long)(SystemCoreClock / 1000000UL));
     printf("NV3030B 1.83\" 240x284 (wrapped-command SPI, MADCTL 0x08):\r\n");
-    printf("SCL=PA5 SDA=PA7 CS=PA4; DC=PA6(nc, not used by the protocol)\r\n");
+    printf("SCL=PA5 SDA=PA7 CS=PA4; DC=PA6 driven low (vendor style)\r\n");
     printf("TOUCH: CST816D I2C SCL=PA2 SDA=PA3\r\n");
 
     Touch_Init();
-    LCD_UseHwBus();       /* SPI1 init + PA5/PA7 to AF5 (before LCD_Init) */
+    LCD_UseSoftBus();     /* start on the vendor-style bit-bang path */
     LCD_Init();
     LCD_SetAsciiFont(&ASCII_Font12);
     paint_fps_band();
 
     while (1)
     {
-        /* ---- HARDWARE (SPI1 @ 12.5 MHz) pass ---- */
+        /* ---- SOFT (bit-bang ~2 MHz) pass ---- */
+        printf("[LCD] phase: SOFT banner\r\n");
+        LCD_Reinit();         /* re-frame the panel */
+        banner_page("NV3030B", "SOFT bus test",
+                    LCD_BLACK, LCD_YELLOW, 3000);
+
+        printf("[LCD] running patterns on SOFT bit-bang @ %s\r\n",
+               mhz_text(LCD_SoftKHz()));
+        run_patterns();
+
+        /* ---- HARDWARE (SPI1 @ 50 MHz) pass ---- */
+        LCD_UseHwBus();
         printf("[LCD] phase: HARDWARE banner\r\n");
         LCD_Reinit();         /* re-frame the panel */
         banner_page("NV3030B", "HW SPI1 test",
                     LCD_BLACK, LCD_CYAN, 3000);
 
-        printf("[LCD] running patterns on HARDWARE SPI1 @ %lu MHz\r\n",
-               LCD_HwSpiKHz() / 1000UL);
+        printf("[LCD] running patterns on HARDWARE SPI1 @ %s\r\n",
+               mhz_text(LCD_HwSpiKHz()));
         run_patterns();
+
+        /* ---- NES-size (224x256) window, HW only ---- */
+        LCD_SetWindow(8U, 14U, 224U, 256U);   /* centered NES window */
+        banner_page("NES 224x256", "HW SPI1 test",
+                    LCD_BLACK, LCD_CYAN, 3000);
+        printf("[LCD] running NES-size patterns on HARDWARE SPI1 @ %s\r\n",
+               mhz_text(LCD_HwSpiKHz()));
+        run_patterns();
+        LCD_ResetWindow();
+
+        LCD_UseSoftBus();
     }
 
     return 0;

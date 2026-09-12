@@ -29,6 +29,13 @@
 #define ROW_Pre   0
 #define Delay_Time 500
 
+/* ---- backlight ----
+ * The module's backlight (LEDA/LEDK on the connector, switched by
+ * BL_CTR) must be powered or nothing is visible. Wire the module's
+ * BL/LEDA pin to PB9 here (or directly to 3.3V). */
+#define LCD_GPIO_PortBL     GPIOB
+#define LCD_BL_Pin          GPIO_PIN_9
+
 /* ---- runtime drawing window ----
  * All drawing is relative to this window; it defaults to the full panel
  * and can be shrunk (e.g. to a centered 256x224 NES window) at runtime. */
@@ -37,17 +44,16 @@ void LCD_ResetWindow(void);   /* back to the full panel */
 uint16_t LCD_W(void);         /* current window width  */
 uint16_t LCD_H(void);         /* current window height */
 
-/* ---- 4-wire SPI control pins ---- */
+/* ---- SPI control pins (nv3030b wiring) ----
+ * SCL = PA5, SDA/MOSI = PA7, CS = PA4.
+ * PA6 = module DC (not used by the wrapped protocol - vendor leaves it
+ * floating too); PA3 = touch I2C SDA, PA2 = touch I2C SCL. */
 #define LCD_GPIO_PortSCL    GPIOA
 #define LCD_SCL_Pin         GPIO_PIN_5
 #define LCD_GPIO_PortSDA    GPIOA
 #define LCD_SDA_Pin         GPIO_PIN_7
-#define LCD_GPIO_PortRS     GPIOA
-#define LCD_RS_Pin          GPIO_PIN_4   /* DC  */
-#define LCD_GPIO_PortRST    GPIOA
-#define LCD_RST_Pin         GPIO_PIN_3
-#define LCD_GPIO_PortCS     GPIOB
-#define LCD_CS_Pin          GPIO_PIN_8
+#define LCD_GPIO_PortCS     GPIOA
+#define LCD_CS_Pin          GPIO_PIN_4
 #define LCD_GPIO_PortBL     GPIOB
 #define LCD_BL_Pin          GPIO_PIN_9   /* TIM4_CH4 backlight PWM */
 #define LCD_GPIO_PortMISO   GPIOA
