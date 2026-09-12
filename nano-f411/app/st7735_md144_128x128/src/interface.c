@@ -3,7 +3,8 @@
   Ported from the vendor example C8T6_md144_t1 (HARDWARE/interface/interface.c,
   LCD_SPI4Line + commdata16 unset): the clock/data are bit-banged GPIO, with
   DC selecting command vs data and CS asserted per transfer.
-    SCL = PA5, SDA = PA6, DC = PA4, RES = PA7, CS = PB8
+    SCL = PA5, SDA = PA7, DC = PA4, RES = PA6, CS = PB8
+    (SDA/RES swapped vs the vendor wiring: SDA PA6->PA7, RES PA7->PA6)
 */
 
 #include "interface.h"

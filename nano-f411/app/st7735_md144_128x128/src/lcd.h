@@ -5,7 +5,9 @@
     - the h723-mini st7789 example's drawing API (24-bit colors, lines,
       rectangles, circles, fills, buffer copy, ASCII text) so the test
       patterns port across almost verbatim.
-  Pins: SCL=PA5, SDA=PA6, RES=PA7, DC=PA4, CS=PB8, BL=PB9 (TIM4_CH4 PWM).
+  Pins: SCL=PA5, SDA=PA7, RES=PA6, DC=PA4, CS=PB8, BL=PB9 (TIM4_CH4 PWM).
+  (SDA and RES are swapped vs the vendor C8T6_md144_t1 wiring: SDA moved
+  PA6 -> PA7 and RES moved PA7 -> PA6.)
   Panel geometry: ST7735S 128x128, MADCTL 0xC8, Y offset 32.
 */
 
@@ -29,11 +31,11 @@
 #define LCD_GPIO_PortSCL    GPIOA
 #define LCD_SCL_Pin         GPIO_PIN_5
 #define LCD_GPIO_PortSDA    GPIOA
-#define LCD_SDA_Pin         GPIO_PIN_6
+#define LCD_SDA_Pin         GPIO_PIN_7
 #define LCD_GPIO_PortRS     GPIOA
 #define LCD_RS_Pin          GPIO_PIN_4   /* DC  */
 #define LCD_GPIO_PortRST    GPIOA
-#define LCD_RST_Pin         GPIO_PIN_7
+#define LCD_RST_Pin         GPIO_PIN_6
 #define LCD_GPIO_PortCS     GPIOB
 #define LCD_CS_Pin          GPIO_PIN_8
 #define LCD_GPIO_PortBL     GPIOB

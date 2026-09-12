@@ -3,9 +3,9 @@
   Mirrors the vendor example C8T6_md144_t1 (HARDWARE/interface/interface.h),
   trimmed to the 4-wire SPI mode used on this wiring:
     SCL = PA5  (SPI clock, bit-banged)
-    SDA = PA6  (SPI MOSI, bit-banged)
+    SDA = PA7  (SPI MOSI, bit-banged; swapped from the vendor PA6)
     DC  = PA4  (data/command)
-    RES = PA7  (reset)
+    RES = PA6  (reset; swapped from the vendor PA7)
     CS  = PB8  (chip select)
 */
 

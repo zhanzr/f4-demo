@@ -13,9 +13,9 @@
 #include "blockwrite.h"
 
 /* =====================================================================
-   GPIO setup: PA4(DC) PA5(SCL) PA6(SDA) PA7(RES) PB8(CS) PB9(BL, via
-   backlight.c as TIM4_CH4 PWM). Mirrors the vendor's LCD_GPIOInit for the
-   pins this interface actually uses.
+   GPIO setup: PA4(DC) PA5(SCL) PA7(SDA) PA6(RES) PB8(CS) PB9(BL, via
+   backlight.c as TIM4_CH4 PWM). Note the SDA/RES swap vs the vendor
+   C8T6_md144_t1 wiring (SDA PA6->PA7, RES PA7->PA6).
    ===================================================================== */
 void LCD_GPIOInit(void)
 {
@@ -323,7 +323,9 @@ void LCD_DisplayChar(uint16_t x, uint16_t y, uint8_t c)
 {
     uint16_t i, index;
     uint8_t  disChar;
-    uint16_t Buff[6 * 12];
+    /* Must hold the LARGEST font's pixels (8x16 = 128); the 6x12 font
+     * only fills the first 72. */
+    uint16_t Buff[8 * 16];
 
     if ((s_AsciiFont == NULL) || (c < 0x20U) || (c > 0x7EU))
     {

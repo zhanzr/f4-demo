@@ -12,5 +12,6 @@
 
 void Backlight_Init(void);
 void Backlight_SetDuty(uint16_t percent);
+uint16_t Backlight_GetDuty(void);      /* current duty in percent */
 
 #endif /* __BACKLIGHT_H */

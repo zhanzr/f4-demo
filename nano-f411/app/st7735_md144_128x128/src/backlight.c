@@ -44,3 +44,8 @@ void Backlight_SetDuty(uint16_t percent)
     }
     TIM4->CCR4 = (uint32_t)percent * (TIM4->ARR + 1U) / 100U;
 }
+
+uint16_t Backlight_GetDuty(void)
+{
+    return (uint16_t)((TIM4->CCR4 * 100U) / (TIM4->ARR + 1U));
+}
