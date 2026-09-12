@@ -194,9 +194,19 @@ static void led_test(void)
 }
 
 /* --------------------------------------------------------------------- */
-/* Vendor TEST_STAND screens (320x480).                                  */
+/* Vendor TEST_STAND screens (320x480). The five solid-color fills are
+ * timed (ms) - the durations belong to the current driving method only:
+ * run_patterns() resets them each pass, before the fills run.          */
+static uint32_t g_solid_ms[5];
+static const char *const g_solid_name[5] =
+{
+    "RED", "GREEN", "BLUE", "WHITE", "BLACK"
+};
+
 static void TEST_STAND(void)
 {
+    const uint32_t solid_color[5] = { RED, GREEN, BLUE, WHITE, BLACK };
+
     DispFrame();
     StopDelay(Delay_Time);
 
@@ -206,17 +216,26 @@ static void TEST_STAND(void)
     DispBand();
     StopDelay(Delay_Time);
 
-    DispColor(RED);   StopDelay(Delay_Time);
-    DispColor(GREEN); StopDelay(Delay_Time);
-    DispColor(BLUE);  StopDelay(Delay_Time);
-    DispColor(WHITE); StopDelay(Delay_Time);
-    DispColor(BLACK); StopDelay(Delay_Time);
+    for (int i = 0; i < 5; i++)
+    {
+        uint32_t t0 = HAL_GetTick();
+        DispColor(solid_color[i]);
+        g_solid_ms[i] = HAL_GetTick() - t0;
+        StopDelay(Delay_Time);
+    }
+
+    printf("[LCD] solid fills (ms): RED=%lu GREEN=%lu BLUE=%lu "
+           "WHITE=%lu BLACK=%lu\r\n",
+           (unsigned long)g_solid_ms[0], (unsigned long)g_solid_ms[1],
+           (unsigned long)g_solid_ms[2], (unsigned long)g_solid_ms[3],
+           (unsigned long)g_solid_ms[4]);
 }
 
 /* --------------------------------------------------------------------- */
 /* Info page: compiler, build date, current frequency, drive method, the
-   IO map, backlight duty and the MCU unique device ID. `invert` swaps
-   fg/bg (white background page).                                        */
+   IO map, backlight duty, the MCU unique device ID and the solid-color
+   fill durations of the current pass. `invert` swaps fg/bg (white
+   background page).                                                     */
 static void info_demo(uint32_t ms, uint8_t invert)
 {
     char buf[24];
@@ -289,7 +308,17 @@ static void info_demo(uint32_t ms, uint8_t invert)
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
     snprintf(buf, sizeof buf, "UID %08lX", (unsigned long)uid[0]);
-    LCD_DisplayString(ix, (uint16_t)y, buf);
+    LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
+
+    /* Solid-color fill durations, measured earlier in this pass (the
+     * TEST_STAND solids run before the info pages) - so they always
+     * reflect the current driving method. */
+    for (int i = 0; i < 5; i++)
+    {
+        snprintf(buf, sizeof buf, "solid %s color: %lu ms",
+                 g_solid_name[i], (unsigned long)g_solid_ms[i]);
+        LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
+    }
 
     g_fps_color = LCD_WHITE;              /* restore default FPS glyph color */
 
@@ -331,17 +360,20 @@ static void banner_page(const char *l1, const char *l2,
 }
 
 /* --------------------------------------------------------------------- */
-/* Full test-pattern set.                                                */
+/* Full test-pattern set. The solid-color fills run FIRST (they are timed
+ * for the current driving method), then the two info pages display the
+ * measured durations.                                                   */
 static void run_patterns(void)
 {
+    printf("[LCD] phase: TEST_STAND\r\n");
+    memset(g_solid_ms, 0, sizeof g_solid_ms);   /* current method only */
+    TEST_STAND();
+
     printf("[LCD] phase: info\r\n");
     info_demo(5000, 0);
 
     printf("[LCD] phase: info (inverted colors)\r\n");
     info_demo(5000, 1);
-
-    printf("[LCD] phase: TEST_STAND\r\n");
-    TEST_STAND();
 
     printf("[LCD] phase: gradient\r\n");
     gradient_demo(4000);

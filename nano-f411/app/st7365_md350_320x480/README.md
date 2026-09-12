@@ -53,19 +53,23 @@ methods**:
 
 Pattern set (per pass, live FPS counter throughout):
 
-1. **Info page** (normal, then **inverted**): compiler, build date, CPU
-   frequency, drive method (soft bit-bang / HW SPI1), the IO map, live
-   backlight duty and the UID.
-2. **TEST_STAND** (500 ms between screens): window-border **frame**,
+1. **TEST_STAND** (500 ms between screens): window-border **frame**,
    **16-level gray** horizontal bars, **color bands**, then full **red,
-   green, blue, white, black** fills.
+   green, blue, white, black** fills - each solid fill is **timed**, and
+   the durations are reset every pass, so they always belong to the
+   current driving method.
+2. **Info page** (normal, then **inverted**): compiler, build date, CPU
+   frequency, drive method (soft bit-bang / HW SPI1), the IO map, live
+   backlight duty, the UID, and the measured **"solid xx color: xx ms"**
+   durations from this pass.
 3. **Gradient** - animated HSV hue sweep across the full color wheel
    (4 s per sweep).
 4. **LED test** - board LED PC13 on/off.
 
 All with a **live FPS counter** drawn transparently in the bottom band.
-The bus difference is dramatic at this panel size (300 KB per frame):
-single-digit fps on the bit-banged bus vs ~20 fps on HW SPI1 @ 50 MHz.
+The bus difference is visible in the measured fills (soft ~1.2 s per
+solid fill vs ~0.8 s on HW SPI1 @ 50 MHz - the per-pixel CS/transfer
+overhead dominates both; the wire time at 50 MHz is negligible).
 
 ## Backlight PWM
 
