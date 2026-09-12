@@ -1,23 +1,23 @@
 /*
   interface.c - low-level NV3030B bus primitives (nano-f411 port).
-  One wiring (SCL=PA5, SDA=PA7, CS=PA4), two drive methods selected at
-  runtime:
 
-    SOFT: PA5/PA7 bit-banged (idle-high SCL, latch on the rising edge).
-    HW  : PA5/PA7 re-muxed to SPI1 AF5 (SCK/MOSI), master, simplex TX
-          (1LINE), 8-bit, mode 3 (CPOL=1, CPHA=1 - the same idle-high /
-          rising-edge-sampling timing the bit-bang produces), MSB first,
-          NSS soft. CS=PA4 stays GPIO. APB2 = 100 MHz (project clock
-          override): default prescaler /2 = 50 MHz SCK (the F411 SPI1
-          max); /4 = 25 MHz via LCD_SPI1_PRESC.
+  Hardware SPI1 only (the vendor example likewise drives the panel from
+  the SPI peripheral - there is no software bit-bang in it):
+
+    HW: PA5/PA7 re-muxed to SPI1 AF5 (SCK/MOSI), master, simplex TX
+        (1LINE), 8-bit, mode 3 (CPOL=1, CPHA=1 - the same idle-high /
+        rising-edge-sampling timing the vendor's F103 hard-SPI uses),
+        MSB first, NSS soft. CS=PA4 stays GPIO. APB2 = 50 MHz (board
+        default clock tree): default prescaler /4 = 12.5 MHz SCK to
+        isolate bring-up; /2 = 25 MHz available via LCD_SPI1_PRESC once
+        verified.
 
   NV3030B wrapped-command framing (vendor-verbatim): every command is
-  written as CS high, CS low, then four bytes 02 00 <cmd> 00; parameter
-  and pixel bytes then stream into the same CS frame. The module's DC
-  pin is not part of this protocol (the vendor never drives it).
-
-  Raster bursts in HW mode stream through a 512-byte TX buffer; in SOFT
-  mode bytes go straight to the bit-bang.
+  written as CS high (settle), CS low, then four bytes 02 00 <cmd> 00;
+  parameter and pixel bytes then stream into the same CS frame. The
+  module's DC pin is not part of this protocol (the vendor never drives
+  it), and there is no reset pin - power-cycling the module is the only
+  recovery from a latched state.
 */
 
 #include "interface.h"
@@ -28,18 +28,17 @@
 /* Bytes of pixel data accumulated before one HAL_SPI_Transmit call (HW). */
 #define SPI_TX_BUF_SIZE 512U
 
-/* SPI1 baud prescaler: APB2 = 100 MHz (project clock override). The
- * default /2 = 50 MHz SCK is the F411 SPI1 max; /4 = 25 MHz via
- * LCD_SPI1_PRESC if a module needs a slower rate. */
+/* SPI1 baud prescaler: APB2 = 50 MHz (board default clock tree). The
+ * default /4 = 12.5 MHz SCK isolates bring-up; /2 = 25 MHz via
+ * LCD_SPI1_PRESC once verified. */
 #ifndef LCD_SPI1_PRESC
-#define LCD_SPI1_PRESC SPI_BAUDRATEPRESCALER_2
+#define LCD_SPI1_PRESC SPI_BAUDRATEPRESCALER_4
 #endif
 
 static uint8_t           s_tx_buf[SPI_TX_BUF_SIZE];
 static uint16_t          s_tx_len;
 static SPI_HandleTypeDef s_hspi;
 static uint8_t           s_spi_ready;
-static uint8_t           s_bus_hw;       /* 0 = soft (GPIO), 1 = HW SPI1    */
 
 void CS_SET(void)
 {
@@ -61,7 +60,7 @@ static void spi_hw_init(void)
 
     s_hspi.Instance               = SPI1;
     s_hspi.Init.Mode              = SPI_MODE_MASTER;
-    s_hspi.Init.Direction         = SPI_DIRECTION_1LINE;      /* TX only */
+    s_hspi.Init.Direction         = SPI_DIRECTION_2LINES;     /* full duplex */
     s_hspi.Init.DataSize          = SPI_DATASIZE_8BIT;
     s_hspi.Init.CLKPolarity       = SPI_POLARITY_HIGH;        /* mode 3  */
     s_hspi.Init.CLKPhase          = SPI_PHASE_2EDGE;
@@ -86,9 +85,8 @@ static void spi_hw_enable(void)
 }
 
 /* Fast register-level polled TX: per-byte cost is a TXE wait + DR write;
- * the MISO side is not collected (there is no MISO on this module - the
- * panel is write-only in this strap). A possible overrun is cleared
- * after the burst. */
+ * the MISO side is not collected (this module is write-only). A possible
+ * overrun is cleared after the burst. */
 static void spi_hw_tx(uint8_t *buf, uint16_t len)
 {
     spi_hw_enable();
@@ -118,29 +116,12 @@ void SPI_HW_Flush(void)
 
 /* ---------------- bus selection ------------------------------------- */
 
-void LCD_UseSoftBus(void)
-{
-    GPIO_InitTypeDef g;
-
-    SPI_HW_Flush();
-    s_bus_hw = 0U;
-
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    g.Mode  = GPIO_MODE_OUTPUT_PP;
-    g.Speed = GPIO_SPEED_FREQ_HIGH;
-    g.Pull  = GPIO_NOPULL;
-    g.Pin   = LCD_SCL_Pin | LCD_SDA_Pin;
-    HAL_GPIO_Init(GPIOA, &g);
-    /* idle SCL/SDA high */
-    LCD_SPI_SCL_SET;
-    LCD_SPI_SDA_SET;
-}
-
+/* Mux PA5/PA7 to SPI1 AF5 and init the peripheral (idempotent). */
 void LCD_UseHwBus(void)
 {
     GPIO_InitTypeDef g;
 
-    s_bus_hw = 1U;
+    s_tx_len = 0U;
 
     __HAL_RCC_GPIOA_CLK_ENABLE();
     g.Mode      = GPIO_MODE_AF_PP;
@@ -155,10 +136,10 @@ void LCD_UseHwBus(void)
 
 uint8_t LCD_BusIsHw(void)
 {
-    return s_bus_hw;
+    return 1U;
 }
 
-/* Active SPI1 baud in kHz (for the info page), e.g. 50000 = 50 MHz. */
+/* Active SPI1 baud in kHz (for the info page), e.g. 12500 = 12.5 MHz. */
 unsigned long LCD_HwSpiKHz(void)
 {
     uint32_t div = 2U << ((s_hspi.Init.BaudRatePrescaler & SPI_CR1_BR) >>
@@ -166,57 +147,17 @@ unsigned long LCD_HwSpiKHz(void)
     return (unsigned long)(HAL_RCC_GetPCLK2Freq() / div / 1000U);
 }
 
-/* ---------------- SOFT path: bit-bang PA5/PA7 ------------------------ */
-
-static void SendDataSPI(uint8_t dat)
-{
-    for (int i = 0; i < 8; i++)
-    {
-        if ((dat & 0x80U) != 0U)
-        {
-            LCD_SPI_SDA_SET;
-        }
-        else
-        {
-            LCD_SPI_SDA_CLR;
-        }
-        dat <<= 1;
-        LCD_SPI_SCL_CLR;
-        LCD_SPI_SCL_SET;
-    }
-}
-
 /* ---------------- byte-level transfers ------------------------------- */
 
-/* Send one byte immediately: bus-dependent, no buffering. */
+/* Send one byte immediately: register-level polled TX. */
 static void spi_send_now(uint8_t dat)
 {
-    if (s_bus_hw != 0U)
-    {
-        spi_hw_enable();
-        while ((SPI1->SR & SPI_SR_TXE) == 0U) { }
-        *((__IO uint8_t *)&SPI1->DR) = dat;
-        while ((SPI1->SR & SPI_SR_BSY) != 0U) { }
-        if ((SPI1->SR & SPI_SR_OVR) != 0U)
-        {
-            (void)SPI1->DR;
-            (void)SPI1->SR;
-        }
-    }
-    else
-    {
-        SendDataSPI(dat);
-    }
+    spi_hw_tx(&dat, 1U);
 }
 
 /* Queue/send one data byte (framing already open). */
 static void spi_put(uint8_t dat)
 {
-    if (s_bus_hw == 0U)
-    {
-        SendDataSPI(dat);
-        return;
-    }
     s_tx_buf[s_tx_len++] = dat;
     if (s_tx_len >= SPI_TX_BUF_SIZE)
     {
@@ -224,13 +165,14 @@ static void spi_put(uint8_t dat)
     }
 }
 
-/* NV3030B wrapped command: CS high (closes any open frame), CS low, then
- * the 4-byte prefix 02 00 <cmd> 00. The frame stays open for the data
- * bytes that follow (vendor-verbatim framing). */
+/* NV3030B wrapped command: CS high (settle), CS low, then the 4-byte
+ * prefix 02 00 <cmd> 00. The frame stays open for the data bytes that
+ * follow (vendor-verbatim framing). */
 void WriteComm(uint16_t data)
 {
     SPI_HW_Flush();
-    LCD_CS_SET;                          /* close any open frame */
+    LCD_CS_SET;
+    for (volatile int d = 0; d < 20; d++) { }   /* CS high settle */
     LCD_CS_CLR;
     spi_send_now(0x02U);
     spi_send_now(0x00U);
@@ -238,8 +180,7 @@ void WriteComm(uint16_t data)
     spi_send_now(0x00U);
 }
 
-/* Write one data byte into the open frame (DC not used by this
- * protocol). */
+/* Write one data byte into the open frame. */
 void WriteData(uint16_t data)
 {
     spi_put((uint8_t)data);

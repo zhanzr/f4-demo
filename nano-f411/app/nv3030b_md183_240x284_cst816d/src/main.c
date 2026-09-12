@@ -2,9 +2,10 @@
   nv3030b_md183_240x284_cst816d main for the nano-f411
   (STM32F411CEU6 @ 100 MHz). MD183 module: NV3030B 240x284 IPS driven
   over its QSPI-compatible single-lane wrapped-command protocol
-  (vendor-verbatim init), on BOTH drive methods (soft bit-bang /
-  HW SPI1 @ 50 MHz), plus CST816D capacitive touch (I2C PA2/PA3) with
-  the touch state printed on the serial console.
+  (vendor-verbatim init), on the HARDWARE SPI1 bus @ 12.5 MHz
+  (isolation rate; 25/50 MHz available via LCD_SPI1_PRESC), plus
+  CST816D capacitive touch (I2C PA2/PA3) with the touch state printed
+  on the serial console.
 
   Pattern set (per pass, live FPS counter throughout):
     - big-font banner page (8x16 font), then the full pattern set:
@@ -19,11 +20,9 @@
   module has no reset pin (the vendor settles CS instead) and no
   backlight control pin (hardwired on-module).
 
-  Clock: SystemClock_Config is overridden (weak hook) to run APB2 at
-  100 MHz instead of the board-default 50 MHz, so SPI1 clocks the panel
-  at 50 MHz (prescaler /2 - the F411 SPI1 max). The core stays at
-  100 MHz; USART1 (APB2) recomputes its baud from the live PCLK2, so
-  the console stays at 115200.
+  NOTE: power-cycle the MODULE (unplug/replug its power, not just
+  NRST) before judging a fix - the panel has no reset pin, so a
+  latched bad state survives MCU resets.
 */
 
 #include <stdio.h>
@@ -33,39 +32,6 @@
 #include "interface.h"
 #include "touch.h"
 #include "lcd/lcd_font_1608.h"
-
-/* ---- clock override: APB2 = 100 MHz (HCLK/1) for the 50 MHz SPI1 ---- */
-void SystemClock_Config(void)
-{
-    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-
-    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-
-    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-    RCC_OscInitStruct.HSEState       = RCC_HSE_ON;
-    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_ON;
-    RCC_OscInitStruct.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
-    RCC_OscInitStruct.PLL.PLLM       = 25U;
-    RCC_OscInitStruct.PLL.PLLN       = 200U;
-    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV2;
-    RCC_OscInitStruct.PLL.PLLQ       = 4U;
-    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
-                                     | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
-    RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
-    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
-    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;   /* 50 MHz (max)   */
-    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;   /* 100 MHz (max)  */
-    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
-    {
-        Error_Handler();
-    }
-}
 
 #define SCREEN_W   LCD_Width     /* 240 (row buffer sizing) */
 #define FPS_BAND   20            /* bottom rows reserved for the FPS text   */
@@ -424,26 +390,16 @@ int main(void)
     printf("TOUCH: CST816D I2C SCL=PA2 SDA=PA3\r\n");
 
     Touch_Init();
+    LCD_UseHwBus();       /* SPI1 init + PA5/PA7 to AF5 (before LCD_Init) */
     LCD_Init();
     LCD_SetAsciiFont(&ASCII_Font12);
     paint_fps_band();
 
     while (1)
     {
-        /* ---- SOFT (bit-banged) pass ---- */
-        printf("[LCD] phase: SOFT banner\r\n");
-        LCD_UseSoftBus();
-        LCD_Reinit();         /* re-frame the panel for the soft bus */
-        banner_page("NV3030B", "soft SPI test",
-                    LCD_YELLOW, LCD_BLUE, 3000);
-
-        printf("[LCD] running patterns on SOFT SPI\r\n");
-        run_patterns();
-
-        /* ---- HARDWARE (SPI1 @ 50 MHz) pass ---- */
+        /* ---- HARDWARE (SPI1 @ 12.5 MHz) pass ---- */
         printf("[LCD] phase: HARDWARE banner\r\n");
-        LCD_UseHwBus();
-        LCD_Reinit();         /* re-frame the panel for the HW bus */
+        LCD_Reinit();         /* re-frame the panel */
         banner_page("NV3030B", "HW SPI1 test",
                     LCD_BLACK, LCD_CYAN, 3000);
 

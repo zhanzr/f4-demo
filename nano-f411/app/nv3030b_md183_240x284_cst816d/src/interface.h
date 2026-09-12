@@ -1,33 +1,28 @@
 /*
   interface.h - low-level NV3030B bus primitives (nano-f411 port).
 
-  The NV3030B on this module runs its QSPI-compatible single-lane serial
-  protocol (the vendor example drives it exactly this way, and its
-  "LCD_DC" pin is never used - command/data framing is carried by the
-  wrapped transaction format instead). Two drive methods, selected at
-  runtime:
+  Hardware SPI1 only (the vendor example likewise drives the panel from
+  the SPI peripheral - there is no software bit-bang in it):
 
-    SOFT: PA5/PA7 bit-banged (idle-high SCL, latch on the rising edge).
-    HW  : SPI1 AF5 (PA5 = SCK, PA7 = MOSI), mode 3, 8-bit, MSB first,
-          NSS soft. APB2 = 100 MHz (project clock override): default
-          prescaler /2 = 50 MHz SCK (the F411 SPI1 max); /4 = 25 MHz
-          available via LCD_SPI1_PRESC. HW raster bursts stream through
-          a 512-byte TX buffer.
+    HW: PA5/PA7 re-muxed to SPI1 AF5 (SCK/MOSI), mode 3 (CPOL=1, CPHA=1
+        - the same idle-high / rising-edge-sampling timing the vendor's
+        hard-SPI uses), 8-bit, MSB first, NSS soft. APB2 = 50 MHz
+        (board default clock tree): default prescaler /4 = 12.5 MHz SCK
+        to isolate bring-up; /2 = 25 MHz via LCD_SPI1_PRESC once
+        verified.
 
-  Transaction framing (vendor-verbatim):
-    WriteComm(cmd): CS high, CS low, send 02 00 cmd 00, CS STAYS LOW -
-                    the frame stays open for the parameters/data that
-                    follow.
-    WriteData(b) / SendData / LCD_WriteDataFast: stream bytes into the
-                    open frame.
-    WriteComm's leading CS high closes the previous frame; LCD_EndData
-    (raster bursts) raises CS as well.
+  NV3030B wrapped-command framing (vendor-verbatim): every command is
+  written as CS high (settle), CS low, then four bytes 02 00 <cmd> 00;
+  parameter and pixel bytes then stream into the same CS frame. The
+  module's DC pin is not part of this protocol (the vendor never drives
+  it), and there is no reset pin - power-cycling the module is the only
+  recovery from a latched state.
 
     SCL = PA5, SDA/MOSI = PA7, CS = PA4 (GPIO).
     DC  = PA6  - NOT USED (vendor defines it but never drives it; the
                  wrapped format carries command/data framing).
-    MISO - the module does not expose a usable MISO for this strap; the
-    panel is write-only through this interface.
+    MISO - not exposed on this module connector; the panel is write-only
+    through this interface.
 */
 
 #ifndef __INTERFACE_H
@@ -44,10 +39,9 @@ void LCD_WriteDataFast(uint8_t data);   /* raw byte, caller manages framing */
 void LCD_BeginData(void);                /* CS low, ready for raster bytes */
 void LCD_EndData(void);                  /* CS high, closes the frame */
 
-/* ---- bus selection (SOFT bit-bang vs HW SPI1) ---- */
-void    LCD_UseSoftBus(void);   /* re-mux PA5/PA7 to GPIO, idle high      */
-void    LCD_UseHwBus(void);     /* re-mux PA5/PA7 to SPI1 AF5 + init      */
-uint8_t LCD_BusIsHw(void);      /* 1 while the HW SPI1 bus is selected    */
+/* ---- HW SPI1 bus ---- */
+void    LCD_UseHwBus(void);     /* mux PA5/PA7 to SPI1 AF5 + init         */
+uint8_t LCD_BusIsHw(void);      /* always 1 (HW-only build)               */
 unsigned long LCD_HwSpiKHz(void); /* active SPI1 baud in kHz (info page)  */
 void    SPI_HW_Flush(void);     /* drain the HW TX buffer (blocking)      */
 

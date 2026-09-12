@@ -3,8 +3,9 @@
 Drives the **MD183** 1.83" **240x284** module — **NV3030B** LCD controller
 plus **CST816D** capacitive touch — on the **nano-f411** board
 (STM32F411CEU6 @ 100 MHz). Test patterns follow
-`st7365_md350_320x480` (dual-bus: soft bit-bang pass + HW SPI1 pass),
-plus touch sensor printout on the serial port.
+`st7365_md350_320x480`, driven by **hardware SPI1 only** (the vendor
+example likewise uses the SPI peripheral — there is no software
+bit-bang in it), plus touch sensor printout on the serial port.
 
 ## Driving the NV3030B (wrapped-command SPI)
 
@@ -51,8 +52,8 @@ the touch bus is **bit-banged** (open-drain SDA, push-pull SCL).
 
 | LCD pin | MCU pin | Feature |
 | ------- | ------- | ------- |
-| SCL | PA5 | SPI clock (bit-banged soft / HW SPI1_SCK AF5) |
-| SDA | PA7 | SPI data out (bit-banged soft / HW SPI1_MOSI AF5) |
+| SCL | PA5 | SPI clock (HW SPI1_SCK, AF5) |
+| SDA | PA7 | SPI data out (HW SPI1_MOSI, AF5) |
 | CS  | **PA4** | Chip select (GPIO software CS) |
 | DC  | PA6 | **not used** by the wrapped protocol (vendor leaves it floating too) |
 | D2/D3 | - | not connected (QSPI lanes; the F411 has no QSPI) |
@@ -66,15 +67,15 @@ the touch bus is **bit-banged** (open-drain SDA, push-pull SCL).
 
 ## What it does
 
-The demo loops forever. Each bus (soft, then HW) runs the **full pattern
-set** — TEST_STAND (frame / 16-level gray / bands / solid colors, timed),
+The demo loops forever on the HW SPI1 bus, running the **full pattern set** — TEST_STAND (frame / 16-level gray / bands / solid colors, timed),
 info pages (normal + inverted), HSV gradient sweep, LED test — with a
 live FPS counter, plus **touch printout on the serial port**
 (`[TOUCH] down X=.. Y=..` on touch, `[TOUCH] release` on lift).
 
-Measured solid fills (320x284 = 68,160 px): soft ~520 ms per fill,
-HW SPI1 @ 50 MHz ~90 ms per fill (~5.8x faster; the HW path is
-per-byte-polling bound — DMA would be the next step).
+Measured solid fills (320x284 = 68,160 px): ~142 ms per fill at the
+12.5 MHz isolation rate on HW SPI1 (wire time alone is ~82 ms, so the
+per-byte polling overhead is already visible here; DMA would be
+the next step).
 
 ## Build / flash / console
 
@@ -98,7 +99,7 @@ prints once at boot and the pattern phases log as they run, looping forever.
 - `src/lcd.c` / `lcd.h` - NV3030B init + 240x284 geometry + drawing API +
   `LCD_Reinit`
 - `src/interface.c` / `interface.h` - wrapped-command bus primitives
-  (soft bit-bang + HW SPI1) + bus switching
+  (HW SPI1 wrapped-command writes) + bus init
 - `src/touch.c` / `touch.h` - CST816D bit-banged I2C touch driver
 - `src/lcd/lcd_fonts.c` / `lcd_fonts.h` - ASCII 6x12 font
 - `src/lcd/lcd_font_1608.c` / `lcd_font_1608.h` - ASCII 8x16 banner font
