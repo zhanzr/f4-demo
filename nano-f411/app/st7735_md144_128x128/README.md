@@ -23,29 +23,34 @@ RES PA7 -> PA6):
 ## What it does
 
 Test patterns ported from the c542 `st7789_md130_240x240` demo
-(`bsp/st7789/main.c`), adapted to 128x128, looped forever:
+(`bsp/st7789/main.c`), adapted to 128x128 - and like md130, the **same
+pattern set runs on BOTH drive methods** in one loop:
 
-1. **Big-font banner** (8x16 font): "MD144 128x128 / soft SPI test" (3 s).
-2. **Info page** (normal, then **inverted**): compiler, build date, CPU
-   frequency, drive method (soft bit-bang), the full swapped IO map,
-   live backlight duty, and the 96-bit UID (reformatted to the 128 px width -
-   max 21 chars/line with the 6x12 font; the ADC block of the md130 demo is
-   dropped because this board's baseline has no `adc_internal` helper).
-3. **Vendor `TEST_STAND`** (500 ms between screens): window-border **frame**,
+1. Big-font banner **"now will do / soft SPI test"** (yellow on blue, 3 s),
+   then the full pattern set on the **bit-banged** bus.
+2. Big-font banner **"now will do / HW SPI1 test"** (black on cyan, 3 s),
+   then the same pattern set on **SPI1 hardware**.
+
+Pattern set (per pass, live FPS counter throughout):
+
+1. **Info page** (normal, then **inverted**): compiler, build date, CPU
+   frequency, active drive method (soft bit-bang / HW SPI1 + clock), the
+   swapped IO map, live backlight duty and the UID (reformatted to the
+   128 px width; the md130 ADC block is dropped because this board's
+   baseline has no `adc_internal` helper).
+2. **Vendor `TEST_STAND`** (500 ms between screens): window-border **frame**,
    **16-level gray** horizontal bars, **color bands**, then full **red,
    green, blue, white, black** fills. The init sequence (frame rate / power /
    gamma / MADCTL `0xC8`, 65k mode) matches the vendor
    `001_006_ST7735S_1.44_0xC8.h` verbatim.
-4. **Gradient** - animated HSV hue sweep across the full color wheel (~2 s).
-5. **LED test** - board LED PC13 on/off.
+3. **Gradient** - animated HSV hue sweep across the full color wheel.
+4. **LED test** - board LED PC13 on/off.
 
-All with a **live FPS counter** drawn transparently in the bottom band.
 (The shapes / pure-color demos of the old `st7735_test` are dropped to match
 md130, which removed them as redundant: `TEST_STAND`'s `DispColor` already
-covers the solid colors and the gradient/CLS paths exercise the primitives.)
-
-The F411 runs at 100 MHz (vs the vendor's 72 MHz F103); the FPS counter shows
-the real throughput of the bit-banged bus (~a few frames/s on the gradient).
+covers the solid colors and the gradient/CLS paths exercise the primitives.
+The FPS counter makes the bus difference obvious: single-digit fps on the
+gradient over bit-bang vs well over 100 fps on HW SPI1.)
 
 ## DisplayChar fixes
 
@@ -81,18 +86,19 @@ ninja flash            # probe-rs download + reset over ST-Link SWD
 
 Console is the board's USART1 / ST-Link VCP (COM9, 115200 8-N-1); a banner
 prints once at boot and the pattern phases log as they run, looping forever.
+(The demo now runs the SOFT pass then the HARDWARE pass, so the phase log
+alternates between "on SOFT SPI" and "on HARDWARE SPI1".)
 
 > **"Target voltage (VAPP) is 0.02 V" warning** during `ninja flash` can be
 > ignored - it is just the ST-Link's target-voltage sensing reporting an
 > unreliable reading. Flashing, reset and the VCP console all work fine
 > (verified on hardware).
 
-## Hardware SPI feasibility (investigation)
+## Hardware SPI (implemented, md130-style dual-bus)
 
-**Yes - the current (swapped) wiring is directly usable by the SPI1
-peripheral** (AF5). The SDA/RES swap actually *aligned* the wiring with
-SPI1's default pins (before the swap SDA=PA6 was SPI1_MISO, useless for a
-write-only panel):
+The swapped wiring maps directly onto the **SPI1** peripheral (AF5) - the
+SDA/RES swap actually *aligned* the wiring with SPI1's default pins (before
+the swap SDA=PA6 was SPI1_MISO, useless for a write-only panel):
 
 | LCD pin | MCU pin | SPI1 (AF5) role | Notes |
 | ------- | ------- | --------------- | ----- |
@@ -102,26 +108,32 @@ write-only panel):
 | DC  | PA4 | (SPI1_NSS unused) | stays GPIO - driven per byte/transfer |
 | CS  | PB8 | - | stays GPIO software CS (PB8 has no SPI1 AF) |
 
-- **Timing**: the bit-bang idles SCL high and samples SDA on the rising edge
-  = SPI **mode 3** (CPOL=1, CPHA=1); hardware SPI in mode 3 replicates the
-  proven timing exactly.
-- **Speed**: SPI1 is clocked from APB2 = 50 MHz on this board, so the fastest
-  baud is **25 MHz** (prescaler /2) - roughly 100x the bit-banged throughput;
-  start conservative (e.g. 6-12 MHz, prescaler /8../4) and raise if stable.
+- **Timing**: SPI mode 3 (CPOL=1, CPHA=1) replicates the bit-bang's
+  idle-high / rising-edge-sampling timing exactly.
+- **Speed**: SPI1 is clocked from APB2 = 50 MHz; the default prescaler is
+  **/4 = 12.5 MHz** (in-spec for ST7735S, ~50x the bit-bang). Raise to
+  **/2 = 25 MHz** by defining `LCD_SPI1_PRESC=SPI_BAUDRATEPRESCALER_2` if
+  the module tolerates it.
+- **Bus switching**: `LCD_UseSoftBus()` / `LCD_UseHwBus()` re-mux PA5/PA7
+  (GPIO vs AF5), then `LCD_Reinit()` (reset + init sequence) re-frames the
+  panel for the freshly selected bus - the same flow as md130. HW raster
+  bursts stream through a 512-byte TX buffer (one `HAL_SPI_Transmit` per
+  <=512 bytes); commands stay unbuffered single-byte transmits.
 - **Caveat**: module-dependent - the c542 MD130 module's HW SPI was
-  physically broken (see its README); the MD144 needs a real test. A natural
-  follow-up is the md130-style SOFT/HW bus compare in one demo loop, plus DMA
-  for the big fills (CopyBuffer/gradient).
+  physically broken (see its README); this MD144's HW path passes the full
+  pattern set. If a unit shows corruption at 12.5 MHz, drop to /8
+  (`SPI_BAUDRATEPRESCALER_8`, 6.25 MHz).
 
 ## Files
 
-- `src/main.c` - md130-style pattern set: banner, info (normal + inverted),
-  vendor TEST_STAND, HSV gradient, LED test, FPS counter
+- `src/main.c` - md130-style pattern set, run on both buses: banner, info
+  (normal + inverted), vendor TEST_STAND, HSV gradient, LED test, FPS counter
 - `src/lcd.c` / `lcd.h` - driver + vendor demo screens + 24-bit color API,
-  text, lines/rects/circles/fills and `LCD_CopyBuffer` (swapped SDA/RES pins)
+  text, lines/rects/circles/fills, `LCD_CopyBuffer`, `LCD_Reinit`
+  (swapped SDA/RES pins)
 - `src/lcd/lcd_fonts.c` / `lcd_fonts.h` - ASCII 6x12 font
 - `src/lcd/lcd_font_1608.c` / `lcd_font_1608.h` - ASCII 8x16 banner font
-- `src/interface.c` / `interface.h` - bit-banged 4-wire SPI primitives
-  (+ fast raster burst helpers)
+- `src/interface.c` / `interface.h` - bus primitives: bit-banged 4-wire SPI
+  **and** HW SPI1 (mode 3, buffered raster bursts) + bus switching
 - `src/blockwrite/blockwrite.h` - pixel-window helper
 - `src/backlight.c` / `backlight.h` - PB9/TIM4_CH4 PWM (+ duty getter)

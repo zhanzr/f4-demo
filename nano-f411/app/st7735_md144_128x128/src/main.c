@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include "board.h"
 #include "lcd.h"
+#include "interface.h"
 #include "lcd/lcd_font_1608.h"
 #include "backlight.h"
 
@@ -202,8 +203,8 @@ static void info_demo(uint32_t ms, uint8_t invert)
 
     printf("[LCD] info%s: compiler=%s build=%s %s\r\n",
            invert ? " (inverted)" : "", comp, __DATE__, __TIME__);
-    printf("[LCD] info: freq=%lu MHz drive=soft bit-bang BL=%u%%\r\n",
-           mhz, (unsigned)duty);
+    printf("[LCD] info: freq=%lu MHz drive=%s BL=%u%%\r\n",
+           mhz, LCD_BusIsHw() ? "HW SPI1" : "soft bit-bang", (unsigned)duty);
     printf("[LCD] info: UID=%08lX%08lX%08lX\r\n",
            (unsigned long)uid[0], (unsigned long)uid[1], (unsigned long)uid[2]);
 
@@ -227,7 +228,19 @@ static void info_demo(uint32_t ms, uint8_t invert)
     snprintf(buf, sizeof buf, "Build %s", __DATE__);
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
-    snprintf(buf, sizeof buf, "%lu MHz bit-bang", mhz);
+    snprintf(buf, sizeof buf, "Freq %lu MHz", mhz);
+    LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
+
+    if (LCD_BusIsHw())
+    {
+        unsigned long khz = LCD_HwSpiKHz();
+        snprintf(buf, sizeof buf, "SPI1 %lu.%lu MHz (HW)",
+                 khz / 1000UL, (khz % 1000UL) / 100UL);
+    }
+    else
+    {
+        snprintf(buf, sizeof buf, "Bus soft (bit-bang)");
+    }
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
     snprintf(buf, sizeof buf, "SCL=PA5 SDA=PA7");
@@ -319,11 +332,25 @@ int main(void)
 
     while (1)
     {
-        printf("[LCD] phase: banner\r\n");
-        banner_page("MD144 128x128", "soft SPI test",
+        /* ---- SOFT (bit-banged) bus ---- */
+        printf("[LCD] phase: SOFT banner\r\n");
+        LCD_UseSoftBus();
+        LCD_Reinit();         /* re-frame the panel for the soft bus */
+        banner_page("now will do", "soft SPI test",
                     LCD_YELLOW, LCD_BLUE, 3000);
 
-        printf("[LCD] running patterns\r\n");
+        printf("[LCD] running patterns on SOFT SPI\r\n");
+        run_patterns();
+
+        /* ---- HARDWARE (SPI1) bus ---- */
+        printf("[LCD] phase: HARDWARE banner\r\n");
+        LCD_UseHwBus();
+        LCD_Reinit();         /* re-frame the panel for the HW bus */
+        banner_page("now will do", "HW SPI1 test",
+                    LCD_BLACK, LCD_CYAN, 3000);
+
+        printf("[LCD] running patterns on HARDWARE SPI1 @ %lu.%lu MHz\r\n",
+               LCD_HwSpiKHz() / 1000UL, (LCD_HwSpiKHz() % 1000UL) / 100UL);
         run_patterns();
     }
 

@@ -117,6 +117,15 @@ void LCD_Init(void)
     DispColor(BLACK);
 }
 
+/* Reset + full re-init sequence. Needed after LCD_UseSoftBus() /
+ * LCD_UseHwBus() switches: the panel's controller is reset so the init
+ * sequence applies cleanly to the freshly (re)selected bus. */
+void LCD_Reinit(void)
+{
+    LCD_RESET();
+    LCD_IC_Init();
+}
+
 /* =====================================================================
    BlockWrite - blockwrite_default.h (vendor, verbatim): set pixel window
    then leave CS/DC ready for the raster dump.

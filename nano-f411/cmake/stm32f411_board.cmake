@@ -62,6 +62,7 @@ function(stm32f411_apply_board TGT OPT)
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_pwr_ex.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_rcc.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_rcc_ex.c
+        ${STM32F4_HAL_SRC}/stm32f4xx_hal_spi.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_uart.c
     )
 

@@ -80,6 +80,7 @@ void LCD_GPIOInit(void);
 void LCD_RESET(void);
 void LCD_IC_Init(void);
 void LCD_Init(void);
+void LCD_Reinit(void);   /* reset + re-init after a bus switch */
 void LCD_SetAddress(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);
 void LCD_SetColor(uint32_t rbg888);
 void LCD_SetBackColor(uint32_t rbg888);
