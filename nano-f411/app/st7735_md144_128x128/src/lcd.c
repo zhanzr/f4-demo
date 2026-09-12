@@ -321,7 +321,7 @@ void LCD_ShowTransparent(uint8_t mode)
 
 void LCD_DisplayChar(uint16_t x, uint16_t y, uint8_t c)
 {
-    uint16_t i, index;
+    uint16_t index;
     uint8_t  disChar;
     /* Must hold the LARGEST font's pixels (8x16 = 128); the 6x12 font
      * only fills the first 72. */
@@ -352,17 +352,20 @@ void LCD_DisplayChar(uint16_t x, uint16_t y, uint8_t c)
     }
 
     index = 0;
-    for (i = 0; i < s_AsciiFont->Sizes; i++)
+    /* Row-major fill matching the font layout: each glyph row is
+     * bytesPerRow bytes, bit 0 = leftmost pixel (the same convention the
+     * transparent path uses). Filling linearly from the raw bit stream
+     * instead smears the 6x12 font: its 6-bit rows are byte-packed with 2
+     * padding bits that would bleed into the next row. */
+    uint16_t bytesPerRow = s_AsciiFont->Sizes / s_AsciiFont->Height;
+    for (uint16_t row = 0; row < s_AsciiFont->Height; row++)
     {
-        disChar = s_AsciiFont->pTable[(uint16_t)c * s_AsciiFont->Sizes + i];
-        for (uint16_t bit = 0; bit < 8; bit++)
+        for (uint16_t col = 0; col < s_AsciiFont->Width; col++)
         {
-            Buff[index++] = (disChar & (uint8_t)(1U << bit))
+            disChar = s_AsciiFont->pTable[(uint16_t)c * s_AsciiFont->Sizes
+                      + (uint16_t)row * bytesPerRow + (col / 8)];
+            Buff[index++] = (disChar & (uint8_t)(1U << (col % 8)))
                             ? s_Color : s_BackColor;
-            if (index >= s_AsciiFont->Width * s_AsciiFont->Height)
-            {
-                break;
-            }
         }
     }
     LCD_CopyBuffer(x, y, s_AsciiFont->Width, s_AsciiFont->Height, Buff);

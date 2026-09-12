@@ -227,23 +227,19 @@ static void info_demo(uint32_t ms, uint8_t invert)
     snprintf(buf, sizeof buf, "Build %s", __DATE__);
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
-    snprintf(buf, sizeof buf, "Freq %lu MHz", mhz);
-    LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
-
-    snprintf(buf, sizeof buf, "Bus soft (bit-bang)");
+    snprintf(buf, sizeof buf, "%lu MHz bit-bang", mhz);
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
     snprintf(buf, sizeof buf, "SCL=PA5 SDA=PA7");
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
-    snprintf(buf, sizeof buf, "RST=PA6 DC=PA4 CS=PB8");
+    snprintf(buf, sizeof buf, "RST=PA6 DC=PA4");
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
-    snprintf(buf, sizeof buf, "BL=PB9 %u%% PWM", (unsigned)duty);
+    snprintf(buf, sizeof buf, "CS=PB8 BL=%u%%", (unsigned)duty);
     LCD_DisplayString(ix, (uint16_t)y, buf);  y += INFO_DY;
 
-    snprintf(buf, sizeof buf, "UID %08lX%08lX", (unsigned long)uid[0],
-             (unsigned long)uid[1]);
+    snprintf(buf, sizeof buf, "UID %08lX", (unsigned long)uid[0]);
     LCD_DisplayString(ix, (uint16_t)y, buf);
 
     g_fps_color = LCD_WHITE;              /* restore default FPS glyph color */
