@@ -29,7 +29,8 @@ void Backlight_Init(void)
     TIM4->CR1  = 0;                    /* counter disabled while configuring */
     TIM4->PSC  = 99;
     TIM4->ARR  = 999;
-    TIM4->CCR4 = 200;                  /* 20% at init */
+    TIM4->CCR4 = 150;                  /* 15% at init (the demo's soft-phase
+                                          duty; main() re-sets it per pass) */
     TIM4->CCMR2 |= (TIM_CCMR2_OC4M_1 | TIM_CCMR2_OC4M_2)  /* PWM mode 1 */
                  | TIM_CCMR2_OC4PE;    /* preload enabled */
     TIM4->CCER  |= TIM_CCER_CC4E;      /* CH4 output enable */

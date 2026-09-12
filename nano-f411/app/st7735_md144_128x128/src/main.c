@@ -6,13 +6,22 @@
     - big-font banner page (8x16 font), then the full pattern set:
       info page (normal + inverted), vendor TEST_STAND screens,
       HSV gradient sweep, LED test - with a live FPS counter throughout.
+    - the same pattern set runs on BOTH drive methods, soft bit-bang and
+      HW SPI1 (md130-style dual-bus loop).
     - (the shapes / pure-color demos of the old st7735_test are dropped to
       match md130, which removed them as redundant: TEST_STAND's DispColor
       already covers the solid colors, and the gradient/CLS paths exercise
       the drawing primitives.)
 
   Wiring (SDA/RES swapped vs the vendor C8T6_md144_t1):
-    SCL=PA5, SDA=PA7, RES=PA6, DC=PA4, CS=PB8, BL=PB9 (TIM4_CH4, ~20% PWM).
+    SCL=PA5, SDA=PA7, RES=PA6, DC=PA4, CS=PB8, BL=PB9 (TIM4_CH4 PWM:
+    15% during the soft pass, 13% during the HW pass).
+
+  Clock: SystemClock_Config is overridden (weak hook) to run APB2 at
+  100 MHz instead of the board-default 50 MHz, so SPI1 can clock the
+  panel at 50 MHz (F411 SPI1 max, 50 Mbit/s @ PCLK2=100 MHz). The core
+  stays at 100 MHz; USART1 (APB2) recomputes its baud from the live
+  PCLK2, so the console stays at 115200.
 */
 
 #include <stdio.h>
@@ -21,6 +30,39 @@
 #include "interface.h"
 #include "lcd/lcd_font_1608.h"
 #include "backlight.h"
+
+/* ---- clock override: APB2 = 100 MHz (HCLK/1) for the 50 MHz SPI1 ---- */
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    RCC_OscInitStruct.HSEState       = RCC_HSE_ON;
+    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
+    RCC_OscInitStruct.PLL.PLLM       = 25U;
+    RCC_OscInitStruct.PLL.PLLN       = 200U;
+    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV2;
+    RCC_OscInitStruct.PLL.PLLQ       = 4U;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                     | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;   /* 50 MHz (max)   */
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;   /* 100 MHz (max)  */
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
 
 #define SCREEN_W   LCD_Width     /* 128 */
 #define SCREEN_H   LCD_Height    /* 128 */
@@ -306,7 +348,7 @@ static void run_patterns(void)
     TEST_STAND();
 
     printf("[LCD] phase: gradient\r\n");
-    gradient_demo(2000);
+    gradient_demo(1000);
 
     printf("[LCD] phase: LED test\r\n");
     led_test();
@@ -321,7 +363,7 @@ int main(void)
     printf("\r\n==== nano-f411 (STM32F411CEU6) st7735_md144_128x128 @ %lu MHz ====\r\n",
            (unsigned long)(SystemCoreClock / 1000000UL));
     printf("ST7735S 1.44\" 128x128, 4-wire SPI: SCL=PA5 SDA=PA7 RES=PA6 "
-           "DC=PA4 CS=PB8 BL=PB9(PWM ~20%%)\r\n");
+           "DC=PA4 CS=PB8 BL=PB9(PWM 15%% soft / 13%% hw)\r\n");
     printf("(SDA/RES swapped vs the vendor C8T6_md144_t1 wiring)\r\n");
     printf("Test patterns ported from c542 st7789_md130_240x240\r\n");
 
@@ -335,6 +377,7 @@ int main(void)
         /* ---- SOFT (bit-banged) bus ---- */
         printf("[LCD] phase: SOFT banner\r\n");
         LCD_UseSoftBus();
+        Backlight_SetDuty(15U);   /* dimmer during the slow bit-bang pass */
         LCD_Reinit();         /* re-frame the panel for the soft bus */
         banner_page("now will do", "soft SPI test",
                     LCD_YELLOW, LCD_BLUE, 3000);
@@ -345,6 +388,7 @@ int main(void)
         /* ---- HARDWARE (SPI1) bus ---- */
         printf("[LCD] phase: HARDWARE banner\r\n");
         LCD_UseHwBus();
+        Backlight_SetDuty(13U);   /* slightly dimmer on the fast HW pass */
         LCD_Reinit();         /* re-frame the panel for the HW bus */
         banner_page("now will do", "HW SPI1 test",
                     LCD_BLACK, LCD_CYAN, 3000);

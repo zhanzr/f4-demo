@@ -2,23 +2,23 @@
 
 Drives an ST7735S 1.44" 128x128 (**MD144**) module on the **nano-f411** board
 (STM32F411CEU6 @ 100 MHz), ported from the vendor example
-`C8T6_md144_t1` (bit-banged 4-wire SPI), with the backlight PWM'd at ~20 %.
+`C8T6_md144_t1` (bit-banged 4-wire SPI).
 (Renamed from `st7735_test` to match the repo's `<panel>_<module>_<res>`
 naming.)
 
-## Wiring
+## Wiring (single table: pin, feature, both drive methods)
 
 **SDA and RES are swapped** vs the vendor example (SDA PA6 -> PA7,
-RES PA7 -> PA6):
+RES PA7 -> PA6). One wiring serves both drive methods:
 
-| LCD pin | MCU pin | Role |
-| ------- | ------- | ---- |
-| SCL | PA5 | SPI clock (bit-banged) |
-| SDA | **PA7** | SPI MOSI (bit-banged; vendor used PA6) |
-| RES | **PA6** | Reset (vendor used PA7) |
-| DC  | PA4 | Data/command |
-| CS  | PB8 | Chip select |
-| BL  | PB9 | Backlight - **TIM4_CH4, ~20% PWM** |
+| LCD pin | MCU pin | Feature | HW SPI1 (AF5) role |
+| ------- | ------- | ------- | ------------------ |
+| SCL | PA5 | SPI clock | **SPI1_SCK** (hardware) |
+| SDA | **PA7** | SPI MOSI - data out (vendor used PA6) | **SPI1_MOSI** (hardware) |
+| RES | **PA6** | Reset (vendor used PA7) | stays GPIO (SPI1_MISO unused - write-only panel) |
+| DC  | PA4 | Data/command select | stays GPIO (SPI1_NSS unused), driven per byte/transfer |
+| CS  | PB8 | Chip select | stays GPIO software CS (PB8 has no SPI1 AF) |
+| BL  | PB9 | Backlight - **TIM4_CH4 PWM: 15% soft pass / 13% HW pass** | - |
 
 ## What it does
 
@@ -35,15 +35,16 @@ Pattern set (per pass, live FPS counter throughout):
 
 1. **Info page** (normal, then **inverted**): compiler, build date, CPU
    frequency, active drive method (soft bit-bang / HW SPI1 + clock), the
-   swapped IO map, live backlight duty and the UID (reformatted to the
-   128 px width; the md130 ADC block is dropped because this board's
+   swapped IO map, live backlight duty (15%/13%) and the UID (reformatted to
+   the 128 px width; the md130 ADC block is dropped because this board's
    baseline has no `adc_internal` helper).
 2. **Vendor `TEST_STAND`** (500 ms between screens): window-border **frame**,
    **16-level gray** horizontal bars, **color bands**, then full **red,
    green, blue, white, black** fills. The init sequence (frame rate / power /
    gamma / MADCTL `0xC8`, 65k mode) matches the vendor
    `001_006_ST7735S_1.44_0xC8.h` verbatim.
-3. **Gradient** - animated HSV hue sweep across the full color wheel.
+3. **Gradient** - animated HSV hue sweep across the full color wheel
+   (1 s per sweep, one full wheel per pass).
 4. **LED test** - board LED PC13 on/off.
 
 (The shapes / pure-color demos of the old `st7735_test` are dropped to match
@@ -72,9 +73,11 @@ ever drew the transparent FPS text):
 ## Backlight PWM
 
 `src/backlight.c` sets up **TIM4_CH4 on PB9 (AF2)** at 1 kHz: `PSC=99`,
-`ARR=999`, `CCR4=200` - **~20 % duty**. APB1 = 50 MHz, timer clock x2 =
-100 MHz. `Backlight_SetDuty()` rescales CCR for 0..100 %;
-`Backlight_GetDuty()` reports the live duty (shown on the info page).
+`ARR=999`, init `CCR4=150` (**15 %** - the demo's soft-pass duty). APB1 =
+50 MHz, timer clock x2 = 100 MHz. `main()` re-sets the duty per pass -
+**15 % during the soft (bit-bang) pass, 13 % during the HW SPI1 pass**.
+`Backlight_SetDuty()` rescales CCR for 0..100 %; `Backlight_GetDuty()`
+reports the live duty (shown on the info page).
 
 ## Build / flash / console
 
@@ -98,22 +101,20 @@ alternates between "on SOFT SPI" and "on HARDWARE SPI1".)
 
 The swapped wiring maps directly onto the **SPI1** peripheral (AF5) - the
 SDA/RES swap actually *aligned* the wiring with SPI1's default pins (before
-the swap SDA=PA6 was SPI1_MISO, useless for a write-only panel):
-
-| LCD pin | MCU pin | SPI1 (AF5) role | Notes |
-| ------- | ------- | --------------- | ----- |
-| SCL | PA5 | **SPI1_SCK** | hardware clock |
-| SDA | PA7 | **SPI1_MOSI** | hardware data out |
-| RES | PA6 | (SPI1_MISO unused) | stays GPIO - write-only panel needs no MISO |
-| DC  | PA4 | (SPI1_NSS unused) | stays GPIO - driven per byte/transfer |
-| CS  | PB8 | - | stays GPIO software CS (PB8 has no SPI1 AF) |
+the swap SDA=PA6 was SPI1_MISO, useless for a write-only panel). See the
+single wiring table above for the per-pin HW roles.
 
 - **Timing**: SPI mode 3 (CPOL=1, CPHA=1) replicates the bit-bang's
   idle-high / rising-edge-sampling timing exactly.
-- **Speed**: SPI1 is clocked from APB2 = 50 MHz; the default prescaler is
-  **/4 = 12.5 MHz** (in-spec for ST7735S, ~50x the bit-bang). Raise to
-  **/2 = 25 MHz** by defining `LCD_SPI1_PRESC=SPI_BAUDRATEPRESCALER_2` if
-  the module tolerates it.
+- **Clock**: SPI1 is clocked from APB2. This project overrides the weak
+  `SystemClock_Config()` to run **APB2 at 100 MHz** (the F411's PCLK2 max;
+  the board default tree divides it to 50 MHz), so the default prescaler
+  **/2 drives the panel at 50 MHz** - the fastest SPI1 baud the board can
+  produce (minimum divider; also the F411 datasheet's SPI1 max of
+  50 Mbit/s). The core stays at 100 MHz and USART1 recomputes its baud
+  from the live PCLK2, so the console stays at 115200 (verified). If a
+  module shows corruption at 50 MHz, drop to /4 (25 MHz) or /8 (12.5 MHz -
+  near the ST7735S ~15 MHz write-cycle spec) via `LCD_SPI1_PRESC`.
 - **Bus switching**: `LCD_UseSoftBus()` / `LCD_UseHwBus()` re-mux PA5/PA7
   (GPIO vs AF5), then `LCD_Reinit()` (reset + init sequence) re-frames the
   panel for the freshly selected bus - the same flow as md130. HW raster
@@ -121,8 +122,8 @@ the swap SDA=PA6 was SPI1_MISO, useless for a write-only panel):
   <=512 bytes); commands stay unbuffered single-byte transmits.
 - **Caveat**: module-dependent - the c542 MD130 module's HW SPI was
   physically broken (see its README); this MD144's HW path passes the full
-  pattern set. If a unit shows corruption at 12.5 MHz, drop to /8
-  (`SPI_BAUDRATEPRESCALER_8`, 6.25 MHz).
+  pattern set (verified at 12.5 MHz; 50 MHz is 3x the ST7735S write-cycle
+  spec, so check the HW pass visually and use the prescaler knob if needed).
 
 ## Files
 
