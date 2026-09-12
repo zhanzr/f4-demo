@@ -26,6 +26,14 @@
 #define ROW_Pre   0
 #define Delay_Time 500
 
+/* ---- runtime drawing window ----
+ * All drawing is relative to this window; it defaults to the full panel
+ * and can be shrunk (e.g. to a centered 256x224 NES window) at runtime. */
+void LCD_SetWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+void LCD_ResetWindow(void);   /* back to the full panel */
+uint16_t LCD_W(void);         /* current window width  */
+uint16_t LCD_H(void);         /* current window height */
+
 /* ---- 4-wire SPI control pins ---- */
 #define LCD_GPIO_PortSCL    GPIOA
 #define LCD_SCL_Pin         GPIO_PIN_5

@@ -60,12 +60,17 @@ void SystemClock_Config(void)
     }
 }
 
-#define SCREEN_W   LCD_Width     /* 320 */
+#define SCREEN_W   LCD_Width     /* 320 max (buffer sizing) */
 #define SCREEN_H   LCD_Height    /* 480 */
 #define FPS_BAND   20            /* bottom rows reserved for the FPS text   */
-#define ANIM_H     (SCREEN_H - FPS_BAND)
 #define BACK_COLOR LCD_BLACK
 #define LED_HALF   1000          /* LED test dwell (ms)                    */
+
+/* Runtime window geometry (follows LCD_SetWindow). */
+static uint16_t anim_h(void)
+{
+    return (uint16_t)(LCD_H() - FPS_BAND);
+}
 
 /* The 320 px panel fits 53 chars/line with the 6x12 font; the info page
  * keeps compact 21-char lines anyway. */
@@ -100,7 +105,7 @@ static void fps_update(void)
         buf[7] = '\0';
         LCD_SetColor(g_fps_color);
         LCD_ShowTransparent(1);              /* no opaque box */
-        LCD_DisplayString(1, ANIM_H + 4, buf);
+        LCD_DisplayString(1, anim_h() + 4, buf);
         LCD_ShowTransparent(0);
     }
 }
@@ -109,7 +114,7 @@ static void paint_fps_band(void)
 {
     LCD_SetColor(BACK_COLOR);
     LCD_SetBackColor(BACK_COLOR);
-    LCD_FillRect(0, ANIM_H, SCREEN_W, FPS_BAND);
+    LCD_FillRect(0, anim_h(), LCD_W(), FPS_BAND);
 }
 
 static void delay_with_fps(uint32_t ms)
@@ -146,18 +151,18 @@ static uint32_t hsv_to_rgb(int h, int s, int v)
 
 static void draw_gradient(int hue_a, int hue_b, uint16_t *row)
 {
-    for (int y = 0; y < ANIM_H; y++)
+    for (int y = 0; y < anim_h(); y++)
     {
-        int frac = y * 1000 / ANIM_H;
+        int frac = y * 1000 / anim_h();
         int hue  = hue_a + (hue_b - hue_a) * frac / 1000;
         uint32_t c = hsv_to_rgb(hue, 255, 255);
         uint16_t rgb565 = (uint16_t)(((c >> 8) & 0xF800) | ((c >> 5) & 0x07E0) |
                                      ((c >> 3) & 0x001F));
-        for (int x = 0; x < SCREEN_W; x++)
+        for (int x = 0; x < LCD_W(); x++)
         {
             row[x] = rgb565;
         }
-        LCD_CopyBuffer(0, (uint16_t)y, SCREEN_W, 1, row);
+        LCD_CopyBuffer(0, (uint16_t)y, LCD_W(), 1, row);
     }
 }
 
@@ -271,7 +276,7 @@ static void info_demo(uint32_t ms, uint8_t invert)
     /* FPS band in the page background color, then restore fg/bg. */
     LCD_SetColor(bg);
     LCD_SetBackColor(bg);
-    LCD_FillRect(0, ANIM_H, SCREEN_W, FPS_BAND);
+    LCD_FillRect(0, anim_h(), LCD_W(), FPS_BAND);
     LCD_SetColor(fg);
     LCD_SetBackColor(bg);
     g_fps_color = fg;                     /* FPS glyph matches the page */
@@ -367,14 +372,14 @@ static void banner_page(const char *l1, const char *l2,
     LCD_Clear();
     LCD_SetColor(bg);
     LCD_SetBackColor(bg);
-    LCD_FillRect(0, ANIM_H, SCREEN_W, FPS_BAND);
+    LCD_FillRect(0, anim_h(), LCD_W(), FPS_BAND);
     LCD_SetColor(fg);
     LCD_SetBackColor(bg);
 
     /* 8 px/glyph: center each line dynamically. */
-    LCD_DisplayString((uint16_t)((SCREEN_W - (int)strlen(l1) * 8) / 2), 40,
+    LCD_DisplayString((uint16_t)((LCD_W() - (int)strlen(l1) * 8) / 2), 40,
                       (char *)l1);
-    LCD_DisplayString((uint16_t)((SCREEN_W - (int)strlen(l2) * 8) / 2), 64,
+    LCD_DisplayString((uint16_t)((LCD_W() - (int)strlen(l2) * 8) / 2), 64,
                       (char *)l2);
 
     HAL_Delay(ms);
@@ -427,28 +432,45 @@ int main(void)
 
     while (1)
     {
-        /* ---- SOFT (bit-banged) bus ---- */
+        /* ---- SOFT pass: full size, then NES size ---- */
         printf("[LCD] phase: SOFT banner\r\n");
         LCD_UseSoftBus();
-        Backlight_SetDuty(15U);   /* dimmer during the slow bit-bang pass */
-        LCD_Reinit();         /* re-frame the panel for the soft bus */
+        Backlight_SetDuty(15U);
+        LCD_Reinit();
+        LCD_ResetWindow();
         banner_page("MD350 320x480", "soft SPI test",
                     LCD_YELLOW, LCD_BLUE, 3000);
 
-        printf("[LCD] running patterns on SOFT SPI\r\n");
+        printf("[LCD] running patterns on SOFT SPI (320x480)\r\n");
         run_patterns();
 
-        /* ---- HARDWARE (SPI1 @ 50 MHz) bus ---- */
+        LCD_SetWindow(32U, 128U, 256U, 224U);   /* centered NES window */
+        banner_page("NES 256x224", "soft SPI test",
+                    LCD_YELLOW, LCD_BLUE, 3000);
+        printf("[LCD] running NES-size patterns on SOFT SPI\r\n");
+        run_patterns();
+        LCD_ResetWindow();
+
+        /* ---- HARDWARE (SPI1 @ 50 MHz) pass ---- */
         printf("[LCD] phase: HARDWARE banner\r\n");
         LCD_UseHwBus();
         Backlight_SetDuty(15U);
-        LCD_Reinit();         /* re-frame the panel for the HW bus */
+        LCD_Reinit();
+        LCD_ResetWindow();
         banner_page("MD350 320x480", "HW SPI1 test",
                     LCD_BLACK, LCD_CYAN, 3000);
 
-        printf("[LCD] running patterns on HARDWARE SPI1 @ %lu MHz\r\n",
+        printf("[LCD] running patterns on HARDWARE SPI1 @ %lu MHz (320x480)\r\n",
                LCD_HwSpiKHz() / 1000UL);
         run_patterns();
+
+        LCD_SetWindow(32U, 128U, 256U, 224U);   /* centered NES window */
+        banner_page("NES 256x224", "HW SPI1 test",
+                    LCD_BLACK, LCD_CYAN, 3000);
+        printf("[LCD] running NES-size patterns on HARDWARE SPI1 @ %lu MHz\r\n",
+               LCD_HwSpiKHz() / 1000UL);
+        run_patterns();
+        LCD_ResetWindow();
     }
 
     return 0;

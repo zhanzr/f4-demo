@@ -43,8 +43,9 @@ the SPI1 peripheral ("hardware SPI" @ 50 MHz).
 
 ## What it does
 
-The demo loops forever, running the **same pattern set on BOTH drive
-methods**:
+The demo loops forever. Each bus (soft, then HW) runs the **full-size
+pattern set** followed by a **NES-size pass** confined to a centered
+**256x224 window** (`LCD_SetWindow(32, 128, 256, 224)`):
 
 1. Big-font banner **"MD350 320x480 / soft SPI test"** (yellow on blue,
    3 s), then the full pattern set on the **bit-banged** bus.
@@ -69,9 +70,20 @@ Pattern set (per pass, live FPS counter throughout):
 4. **LED test** - board LED PC13 on/off.
 
 All with a **live FPS counter** drawn transparently in the bottom band.
-Measured fills: soft ~1160 ms per solid fill vs ~183 ms on HW SPI1 @ 50
-MHz (the wire floor at 50 MHz is ~50 ms; the HW path is ~4.5x faster than
-the soft pass even though the per-byte polling overhead dominates both).
+
+### Measured refresh (solid fills): 320x480 vs NES 256x224
+
+| Window | Pixels | Soft bit-bang | HW SPI1 @ 50 MHz |
+| ------ | ------ | ------------- | ---------------- |
+| 320x480 | 153,600 | ~1164 ms | ~183 ms |
+| NES 256x224 | 57,344 (37.5%) | ~436 ms | ~70 ms |
+
+The times scale with the pixel count on both buses - they are
+bandwidth/overhead bound, not panel bound. The soft bit-bang rate is
+deliberately NOT tuned beyond ~2.1 MHz: faster variants (direct BSRR
+writes, ~7-10 MHz) were tested and leave the panel blank - see the note
+in `src/interface.c`. The soft interface pins now run at
+`GPIO_SPEED_FREQ_HIGH` (cleanest edges at the proven bit rate).
 The soft bit-bang rate is deliberately NOT tuned beyond ~2.1 MHz: faster
 variants (direct BSRR writes, ~7-10 MHz) were tested and leave the panel
 blank - see the note in `src/interface.c`.

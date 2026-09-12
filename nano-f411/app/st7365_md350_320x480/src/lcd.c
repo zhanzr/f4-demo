@@ -17,6 +17,44 @@
 #include "interface.h"
 #include "blockwrite.h"
 
+/* ---- runtime drawing window ----
+ * Every draw is relative to this window (origin + size). It defaults to
+ * the full panel and can be shrunk at runtime (e.g. to a centered
+ * 256x224 NES window); the surrounding area keeps its previous content. */
+static uint16_t s_win_x = 0, s_win_y = 0;
+static uint16_t s_win_w = COL, s_win_h = ROW;
+
+void LCD_SetWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
+{
+    if (x >= COL || y >= ROW) { return; }
+    if (w == 0U || h == 0U)   { return; }
+    if (x + w > COL) { w = (uint16_t)(COL - x); }
+    if (y + h > ROW) { h = (uint16_t)(ROW - y); }
+    s_win_x = x;
+    s_win_y = y;
+    s_win_w = w;
+    s_win_h = h;
+}
+
+void LCD_ResetWindow(void)
+{
+    s_win_x = 0U;
+    s_win_y = 0U;
+    s_win_w = COL;
+    s_win_h = ROW;
+}
+
+uint16_t LCD_W(void)
+{
+    return s_win_w;
+}
+
+uint16_t LCD_H(void)
+{
+    return s_win_h;
+}
+
+
 /* =====================================================================
    GPIO setup: PA4(DC) PA5(SCL) PA7(SDA) PA3(RES) PB8(CS) PB9(BL, via
    backlight.c as TIM4_CH4 PWM). MISO = PA6 is not driven by this
@@ -29,9 +67,10 @@ void LCD_GPIOInit(void)
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
 
+    /* Highest GPIO speed: cleanest edges for the bit-banged bus. */
     g.Mode  = GPIO_MODE_OUTPUT_PP;
     g.Pull  = GPIO_NOPULL;
-    g.Speed = GPIO_SPEED_FREQ_LOW;
+    g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 
     g.Pin = LCD_SCL_Pin;  HAL_GPIO_Init(LCD_GPIO_PortSCL, &g);
     g.Pin = LCD_SDA_Pin;  HAL_GPIO_Init(LCD_GPIO_PortSDA, &g);
@@ -131,22 +170,22 @@ void LCD_Reinit(void)
 }
 
 /* =====================================================================
-   BlockWrite - blockwrite_default.h (vendor, verbatim): set pixel window
-   then leave CS/DC ready for the raster dump.
+   BlockWrite - set a pixel window relative to the current drawing
+   window, then leave CS/DC ready for the raster dump.
    ===================================================================== */
 void BlockWrite(uint16_t Xstart, uint16_t Xend, uint16_t Ystart, uint16_t Yend)
 {
     WriteComm(0x2A);
-    WriteData((uint16_t)(Xstart >> 8));
-    WriteData((uint16_t)Xstart);
-    WriteData((uint16_t)(Xend >> 8));
-    WriteData(Xend);
+    WriteData((uint16_t)((Xstart + s_win_x) >> 8));
+    WriteData((uint16_t)(Xstart + s_win_x));
+    WriteData((uint16_t)((Xend + s_win_x) >> 8));
+    WriteData((uint16_t)(Xend + s_win_x));
 
     WriteComm(0x2B);
-    WriteData((uint16_t)(Ystart >> 8));
-    WriteData((uint16_t)Ystart);
-    WriteData((uint16_t)(Yend >> 8));
-    WriteData(Yend);
+    WriteData((uint16_t)((Ystart + s_win_y) >> 8));
+    WriteData((uint16_t)(Ystart + s_win_y));
+    WriteData((uint16_t)((Yend + s_win_y) >> 8));
+    WriteData((uint16_t)(Yend + s_win_y));
 
     WriteComm(0x2C);
 }
@@ -159,11 +198,11 @@ void BlockWrite(uint16_t Xstart, uint16_t Xend, uint16_t Ystart, uint16_t Yend)
 void DispColor(uint32_t color)
 {
     int i, j;
-    BlockWrite(COL_Pre, COL + COL_Pre - 1, ROW_Pre, ROW + ROW_Pre - 1);
+    BlockWrite(0, LCD_W() - 1U, 0, LCD_H() - 1U);
     LCD_BeginData();
-    for (i = 0; i < ROW; i++)
+    for (i = 0; i < (int)LCD_H(); i++)
     {
-        for (j = 0; j < COL; j++)
+        for (j = 0; j < (int)LCD_W(); j++)
         {
             LCD_WriteDataFast((uint8_t)(color >> 8));
             LCD_WriteDataFast((uint8_t)color);
@@ -175,19 +214,19 @@ void DispColor(uint32_t color)
 void DispFrame(void)
 {
     int i, j;
-    BlockWrite(COL_Pre, COL + COL_Pre - 1, ROW_Pre, ROW + ROW_Pre - 1);
+    BlockWrite(0, LCD_W() - 1U, 0, LCD_H() - 1U);
     LCD_BeginData();
     LCD_WriteDataFast(0xF8); LCD_WriteDataFast(0x00);
-    for (i = 0; i < COL - 2; i++) { LCD_WriteDataFast(0xFF); LCD_WriteDataFast(0xFF); }
+    for (i = 0; i < (int)LCD_W() - 2; i++) { LCD_WriteDataFast(0xFF); LCD_WriteDataFast(0xFF); }
     LCD_WriteDataFast(0x00); LCD_WriteDataFast(0x1F);
-    for (j = 0; j < ROW - 2; j++)
+    for (j = 0; j < (int)LCD_H() - 2; j++)
     {
         LCD_WriteDataFast(0xF8); LCD_WriteDataFast(0x00);
-        for (i = 0; i < COL - 2; i++) { LCD_WriteDataFast(0x00); LCD_WriteDataFast(0x00); }
+        for (i = 0; i < (int)LCD_W() - 2; i++) { LCD_WriteDataFast(0x00); LCD_WriteDataFast(0x00); }
         LCD_WriteDataFast(0x00); LCD_WriteDataFast(0x1F);
     }
     LCD_WriteDataFast(0xF8); LCD_WriteDataFast(0x00);
-    for (i = 0; i < COL - 2; i++) { LCD_WriteDataFast(0xFF); LCD_WriteDataFast(0xFF); }
+    for (i = 0; i < (int)LCD_W() - 2; i++) { LCD_WriteDataFast(0xFF); LCD_WriteDataFast(0xFF); }
     LCD_WriteDataFast(0x00); LCD_WriteDataFast(0x1F);
     LCD_EndData();
 }
@@ -195,16 +234,16 @@ void DispFrame(void)
 void DispGrayHor16(void)
 {
     int i, j, k;
-    BlockWrite(COL_Pre, COL + COL_Pre - 1, ROW_Pre, ROW + ROW_Pre - 1);
+    BlockWrite(0, LCD_W() - 1U, 0, LCD_H() - 1U);
     LCD_BeginData();
-    for (i = 0; i < ROW; i++)
+    for (i = 0; i < (int)LCD_H(); i++)
     {
-        for (j = 0; j < COL % 16; j++) { LCD_WriteDataFast(0); LCD_WriteDataFast(0); }
+        for (j = 0; j < (int)LCD_W() % 16; j++) { LCD_WriteDataFast(0); LCD_WriteDataFast(0); }
         for (j = 0; j < 16; j++)
         {
             uint16_t c = (uint16_t)(((((j * 2) << 3) | ((j * 4) >> 3)) << 8) |
                                     (((j * 4) << 5) | (j * 2)));
-            for (k = 0; k < COL / 16; k++)
+            for (k = 0; k < (int)LCD_W() / 16; k++)
             {
                 LCD_WriteDataFast((uint8_t)(c >> 8));
                 LCD_WriteDataFast((uint8_t)c);
@@ -219,22 +258,22 @@ void DispBand(void)
     static const uint16_t color[8] = { 0xF800, 0xF800, 0x07E0, 0x07E0,
                                        0x001F, 0x001F, 0xFFFF, 0xFFFF };
     int i, j, k;
-    BlockWrite(COL_Pre, COL + COL_Pre - 1, ROW_Pre, ROW + ROW_Pre - 1);
+    BlockWrite(0, LCD_W() - 1U, 0, LCD_H() - 1U);
     LCD_BeginData();
     for (i = 0; i < 8; i++)
     {
-        for (j = 0; j < ROW / 8; j++)
+        for (j = 0; j < (int)LCD_H() / 8; j++)
         {
-            for (k = 0; k < COL; k++)
+            for (k = 0; k < (int)LCD_W(); k++)
             {
                 LCD_WriteDataFast((uint8_t)(color[i] >> 8));
                 LCD_WriteDataFast((uint8_t)color[i]);
             }
         }
     }
-    for (j = 0; j < ROW % 8; j++)
+    for (j = 0; j < (int)LCD_H() % 8; j++)
     {
-        for (k = 0; k < COL; k++)
+        for (k = 0; k < (int)LCD_W(); k++)
         {
             LCD_WriteDataFast((uint8_t)(color[7] >> 8));
             LCD_WriteDataFast((uint8_t)color[7]);
@@ -259,6 +298,8 @@ static uint16_t s_BackColor = BLACK;
 static uint8_t  s_Transparent = 0;
 static pFONT  *s_AsciiFont = NULL;
 
+
+
 /* Convert a 24-bit RGB888 into a 16-bit RGB565 word. */
 static uint16_t rgb888_to_rgb565(uint32_t c)
 {
@@ -278,29 +319,34 @@ void LCD_SetBackColor(uint32_t rgb888)
     s_BackColor = rgb888_to_rgb565(rgb888);
 }
 
-/* Set the pixel window using the panel's column/row pre-offsets (128x128,
-   Y offset 32 for the 1.44" 0xC8 orientation), then leave CS/DC for data. */
+/* Set the pixel window using the runtime drawing window (origin + size),
+ * then leave CS/DC for data. */
 void LCD_SetAddress(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 {
+    x1 = (uint16_t)(x1 + s_win_x);
+    y1 = (uint16_t)(y1 + s_win_y);
+    x2 = (uint16_t)(x2 + s_win_x);
+    y2 = (uint16_t)(y2 + s_win_y);
+
     WriteComm(0x2A);
-    WriteData((uint16_t)((x1 + COL_Pre) >> 8));
-    WriteData((uint16_t)(x1 + COL_Pre));
-    WriteData((uint16_t)((x2 + COL_Pre) >> 8));
-    WriteData((uint16_t)(x2 + COL_Pre));
+    WriteData((uint16_t)(x1 >> 8));
+    WriteData((uint16_t)x1);
+    WriteData((uint16_t)(x2 >> 8));
+    WriteData((uint16_t)x2);
 
     WriteComm(0x2B);
-    WriteData((uint16_t)((y1 + ROW_Pre) >> 8));
-    WriteData((uint16_t)(y1 + ROW_Pre));
-    WriteData((uint16_t)((y2 + ROW_Pre) >> 8));
-    WriteData((uint16_t)(y2 + ROW_Pre));
+    WriteData((uint16_t)(y1 >> 8));
+    WriteData((uint16_t)y1);
+    WriteData((uint16_t)(y2 >> 8));
+    WriteData((uint16_t)y2);
 
     WriteComm(0x2C);
 }
 
 void LCD_Clear(void)
 {
-    uint32_t n = (uint32_t)COL * ROW;
-    LCD_SetAddress(0, 0, COL - 1, ROW - 1);
+    uint32_t n = (uint32_t)s_win_w * s_win_h;
+    LCD_SetAddress(0, 0, s_win_w - 1, s_win_h - 1);
     LCD_BeginData();
     while (n--)
     {
