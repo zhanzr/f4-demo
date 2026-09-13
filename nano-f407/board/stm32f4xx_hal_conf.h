@@ -1,4 +1,4 @@
-/**
+﻿/**
   ******************************************************************************
   * @file    stm32f4xx_hal_conf.h
   * @brief   HAL configuration file for STM32F407VET6 (nano-f407 board).
@@ -23,6 +23,7 @@ extern "C" {
 #define HAL_RCC_MODULE_ENABLED
 #define HAL_UART_MODULE_ENABLED
 #define HAL_DMA_MODULE_ENABLED
+#define HAL_SRAM_MODULE_ENABLED          /* FSMC NOR/SRAM (LCD panels on the FSMC bus) */
 
 /* ########################## Oscillator Values ############################# */
 #define HSE_VALUE    ((uint32_t)8000000U) /*!< Value of the External oscillator in Hz. nano-f407 board: 8 MHz. */
@@ -85,6 +86,7 @@ void assert_failed(uint8_t *file, uint32_t line);
 
 #if defined(HAL_UART_MODULE_ENABLED)
   #include "stm32f4xx_hal_uart.h"
+#include "stm32f4xx_hal_sram.h"           /* FSMC NOR/SRAM (LCD panels on the FSMC bus) */
 #endif /* HAL_UART_MODULE_ENABLED */
 
 #ifdef __cplusplus
