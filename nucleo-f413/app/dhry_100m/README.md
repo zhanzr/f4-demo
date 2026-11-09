@@ -14,8 +14,9 @@ chip runs the benchmark (it re-runs every ~19 s), and take the last complete
 
 | Toolchain    | Flags                                    | Dhrystones/s | DMIPS/MHz |
 | ------------ | ---------------------------------------- | ------------ | --------- |
-| GCC | `-Ofast -ffp-contract=fast -funroll-loops` | **235,211** | **1.339** |
+| GCC | `-Ofast -ffp-contract=fast -funroll-loops` | 235,211 | 1.339 |
 | ARMCLANG (Keil AC6) | `-Ofast -ffp-contract=fast -funroll-loops` | **251,193** | **1.430** |
+| ST Arm clang | `-Ofast -ffp-contract=fast -funroll-loops` | 249,283 | 1.419 |
 
 All runs print correct final values (Int_Glob=5, Arr_2_Glob = runs+10, …).
 
