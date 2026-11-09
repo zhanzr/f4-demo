@@ -150,6 +150,29 @@ prints the SPI read diagnostics and the pattern phases log as they run.
   clock before its 24 response bits, so the four captured bytes are
   realigned before reporting the three ID bytes.
 
+## DMA experiment (not enabled; direction documented)
+
+An experimental DMA raster path was implemented register-level and then
+**disabled** (build flag `LCD_USE_DMA`, default 0 in `src/interface.c`):
+DMA2 Stream5, channel 3 -> SPI1_TX, byte transfers, memory-increment,
+armed per 4 KB buffer flush (`spi_hw_tx`).
+
+Observed on hardware: the bursts **complete** (DMA2 HISR TCIF5+HTIF5
+verified via SWD) yet the panel shows nothing, while small per-byte
+writes (< 32 bytes) render fine. So the bytes are consumed by the SPI
+but never reach the panel correctly. Suspects, in order:
+
+- missing FIFO/burst configuration on byte-wide DMA streams;
+- SPI CR2 DMAEN handling specifics on the F413;
+- the RX side never being drained by DMA (full-duplex overruns) -
+  arming the RX stream alongside TX is the standard fix to try first.
+
+This repo previously had **no SPI-DMA usage anywhere** (nano-f411 only
+enables the HAL DMA module), so there was no in-repo reference to copy;
+the direction above is the documented starting point for resuming.
+Current fills run at 323 ms via the CPU-polled per-byte path; wire time
+at 50 MHz is ~74 ms, so DMA would gain ~4x once fixed.
+
 ## Files
 
 - `src/main.c` - pattern set on both buses: banner, info (normal +

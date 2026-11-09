@@ -27,7 +27,7 @@
 
 /* Bytes of pixel data accumulated before one SPI1 burst (HW path only).
  * In a raster burst pairs of bytes go out as 16-bit frames. */
-#define SPI_TX_BUF_SIZE 512U
+#define SPI_TX_BUF_SIZE 4096U   /* DMA moves this in ~65 us at 50 MHz */
 
 /* SPI1 baud prescaler: APB2 = 100 MHz natively on the F413 board clock
  * tree; /2 = 50 MHz SCK is the SPI1 maximum and the verified default.
@@ -36,6 +36,12 @@
  * spot of the panel's internal clock-divider sampling. Avoid it. */
 #ifndef LCD_SPI1_PRESC
 #define LCD_SPI1_PRESC SPI_BAUDRATEPRESCALER_2
+#endif
+
+/* EXPERIMENTAL DMA raster bursts (see spi_hw_tx): default OFF - the
+ * bursts complete but the panel shows nothing yet. */
+#ifndef LCD_USE_DMA
+#define LCD_USE_DMA 0
 #endif
 
 static uint8_t           s_tx_buf[SPI_TX_BUF_SIZE];
@@ -71,6 +77,7 @@ static void spi_hw_init(void)
         return;
     }
     __HAL_RCC_SPI1_CLK_ENABLE();
+    __HAL_RCC_DMA2_CLK_ENABLE();        /* SPI1_TX DMA (raster bursts) */
 
     s_hspi.Instance               = SPI1;
     s_hspi.Init.Mode              = SPI_MODE_MASTER;
@@ -159,11 +166,39 @@ static void spi_hw_tx(uint8_t *buf, uint16_t len)
     }
 
     spi_hw_enable();
-    for (; i < len; i++)
+
+#if LCD_USE_DMA
+    /* EXPERIMENTAL (not enabled by default): DMA bursts complete
+     * (TCIF5 sets) but the panel shows nothing - under investigation.
+     * DMA2 Stream5 channel 3 -> SPI1_TX, byte-wide, mem increment. */
+    if (len >= 32U)
     {
-        while ((SPI1->SR & SPI_SR_TXE) == 0U) { }
-        *((__IO uint8_t *)&SPI1->DR) = buf[i];
+        DMA2_Stream5->CR = 0U;
+        while (DMA2_Stream5->CR & DMA_SxCR_EN) { }
+
+        DMA2_Stream5->PAR  = (uint32_t)&SPI1->DR;
+        DMA2_Stream5->M0AR = (uint32_t)buf;
+        DMA2_Stream5->NDTR = len;
+        DMA2_Stream5->CR = DMA_SxCR_CHSEL_0 | DMA_SxCR_CHSEL_1
+                         | DMA_SxCR_MINC
+                         | DMA_SxCR_DIR_0
+                         | DMA_SxCR_PL_1
+                         | DMA_SxCR_EN;
+
+        SPI1->CR2 |= SPI_CR2_TXDMAEN;
+        while (DMA2_Stream5->CR & DMA_SxCR_EN) { }
+        SPI1->CR2 &= ~SPI_CR2_TXDMAEN;
     }
+    else
+#endif
+    {
+        for (; i < len; i++)
+        {
+            while ((SPI1->SR & SPI_SR_TXE) == 0U) { }
+            *((__IO uint8_t *)&SPI1->DR) = buf[i];
+        }
+    }
+
     while ((SPI1->SR & SPI_SR_BSY) != 0U) { }
 
     while ((SPI1->SR & SPI_SR_RXNE) != 0U) { (void)SPI1->DR; }

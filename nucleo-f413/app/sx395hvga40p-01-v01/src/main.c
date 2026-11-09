@@ -351,11 +351,17 @@ static void banner_page(const char *l1, const char *l2,
     LCD_SetColor(fg);
     LCD_SetBackColor(bg);
 
-    /* 8 px/glyph x scale 2 = 16 px/glyph: center each line dynamically. */
-    LCD_DisplayStringScaled((uint16_t)((LCD_W() - (int)strlen(l1) * 16) / 2),
-                            40, (char *)l1, 2);
-    LCD_DisplayStringScaled((uint16_t)((LCD_W() - (int)strlen(l2) * 16) / 2),
-                            90, (char *)l2, 2);
+    /* 8 px/glyph x scale 2 = 16 px/glyph: center each line dynamically.
+     * Clamp to 0 for overlong lines (a negative would wrap the uint16_t
+     * x and the whole line would silently vanish off-screen). */
+    {
+        int tx1 = (int)LCD_W() - (int)strlen(l1) * 16;
+        int tx2 = (int)LCD_W() - (int)strlen(l2) * 16;
+        LCD_DisplayStringScaled((uint16_t)(tx1 > 0 ? tx1 / 2 : 0), 40,
+                                (char *)l1, 2);
+        LCD_DisplayStringScaled((uint16_t)(tx2 > 0 ? tx2 / 2 : 0), 90,
+                                (char *)l2, 2);
+    }
 
     HAL_Delay(ms);
 
@@ -424,24 +430,37 @@ int main(void)
     LCD_SetAsciiFont(&ASCII_Font16);
     paint_fps_band();
 
-    char l2[32];
+    char l1[32] = "SX395 320x480";
+    char l2[40];
 
     while (1)
     {
-        /* ---- HARDWARE pass: SPI1 at its 50 MHz maximum ---- */
-        snprintf(l2, sizeof l2, "HW SPI1 %lu MHz",
-                 LCD_HwSpiKHz() / 1000UL);
-
-        printf("[LCD] phase: HARDWARE banner\r\n");
-        LCD_UseHwBus();
-        Backlight_SetDuty(50U);
+        /* ---- SOFT pass: fastest bit-bang (pace 0 ~ 5-7 MHz), 15% BL ---- */
+        LCD_SoftSetPace(0U);
+        LCD_UseSoftBus();
+        Backlight_SetDuty(15U);
         LCD_Reinit();
         LCD_ResetWindow();
-        banner_page("SX395 320x480", l2,
-                    LCD_BLACK, LCD_CYAN, 3000);
 
-        printf("[LCD] running patterns on HARDWARE SPI1 @ %lu MHz (320x480)\r\n",
-               LCD_HwSpiKHz() / 1000UL);
+        snprintf(l2, sizeof l2, "SOFT SPI BL 15%%");
+        printf("[LCD] phase: SOFT banner (%s)\r\n", l2);
+        banner_page(l1, l2, LCD_YELLOW, LCD_BLUE, 3000);
+
+        printf("[LCD] running patterns on SOFT SPI (320x480)\r\n");
+        run_patterns();
+
+        /* ---- HARDWARE pass: SPI1 at its 50 MHz maximum, 30% BL ---- */
+        LCD_UseHwBus();
+        LCD_HwSetPrescaler(SPI_BAUDRATEPRESCALER_2);
+        Backlight_SetDuty(30U);
+        LCD_Reinit();
+        LCD_ResetWindow();
+
+        snprintf(l2, sizeof l2, "HW 50 MHz BL 30%%");
+        printf("[LCD] phase: HARDWARE banner (%s)\r\n", l2);
+        banner_page(l1, l2, LCD_BLACK, LCD_CYAN, 3000);
+
+        printf("[LCD] running patterns on HARDWARE SPI1 @ 50 MHz (320x480)\r\n");
         run_patterns();
     }
 
