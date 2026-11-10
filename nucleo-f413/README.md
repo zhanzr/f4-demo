@@ -22,11 +22,13 @@ streamed out **USART3 (PD8/PD9)** at 115200 baud - the ST-LINK
 
 ## Projects (`app/`)
 
-| Project                 | What it does |
-| ----------------------- | ------------ |
-| `app/blink_hello`       | Blinks the three user LEDs and periodically prints the ADC1 internal channels (temperature / VREFINT / VBAT) |
-| `app/dhry_100m`         | Dhrystone 2.1 @ 100 MHz: **235.2k Dhrystones/s = 1.339 DMIPS/MHz** (GCC -Ofast -funroll-loops) |
-| `app/coremark_100m`     | CoreMark 1.0.1 @ 100 MHz: **282.32 it/s** (GCC -Ofast -funroll-all-loops, crc 0x988c validated) |
+| Project                       | What it does |
+| ----------------------------- | ------------ |
+| `app/blink_hello`             | 3-LED blink + ADC1 internal-channel report |
+| `app/dhry_100m`               | Dhrystone 2.1 benchmark |
+| `app/coremark_100m`           | CoreMark 1.0.1 benchmark |
+| `app/sx395hvga40p-01-v01`     | ILI9488 3.5" 320x480 SPI LCD demo (soft bit-bang + HW SPI1 with DMA) |
+| `app/ips395-st7796-captouch`  | ST7796S 4.0" 320x480 IPS LCD demo, RGB565 (touch not implemented yet) |
 
 ## Notes
 
