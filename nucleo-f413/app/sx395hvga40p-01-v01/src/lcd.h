@@ -110,6 +110,19 @@ void LCD_SetAsciiFont(pFONT *font);
 void LCD_ShowTransparent(uint8_t mode);
 void LCD_DisplayChar(uint16_t x, uint16_t y, uint8_t c);
 void LCD_DisplayString(uint16_t x, uint16_t y, char *p);
+
+/* ---- single-pass page renderer -------------------------------------------
+ * Paints the window background and all text lines into one continuous
+ * raster stream (one BeginData/EndData pass for the whole page). */
+typedef struct
+{
+    const char *text;    /* NUL-terminated ASCII string           */
+    uint16_t    x, y;    /* top-left pixel of the text block      */
+    uint16_t    scale;   /* 1 = font pixels, 2 = doubled          */
+} LcdTextLine;
+
+void LCD_DrawTextPage(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                      uint8_t nlines, const LcdTextLine *lines);
 void LCD_DisplayCharScaled(uint16_t x, uint16_t y, uint8_t c, uint16_t scale);
 void LCD_DisplayStringScaled(uint16_t x, uint16_t y, char *p, uint16_t scale);
 

@@ -268,62 +268,49 @@ static void info_demo(uint32_t ms, uint8_t invert)
 
     LCD_SetColor(fg);
     LCD_SetBackColor(bg);
-    LCD_Clear();
 
-    /* FPS band in the page background color, then restore fg/bg. */
-    LCD_SetColor(bg);
-    LCD_SetBackColor(bg);
-    LCD_FillRect(0, anim_h(), LCD_W(), FPS_BAND);
-    LCD_SetColor(fg);
-    LCD_SetBackColor(bg);
-    g_fps_color = fg;                     /* FPS glyph matches the page */
-
-    /* Scaled 2x text (8x16 font -> 16x32 glyphs): larger, and only the
-     * compact line set fits the 320 px width. y starts below the top
-     * edge margin; the FPS band stays at the bottom. */
-    const int ix = 2;
-    const int dy = 36;
+    /* Single-pass page render: bg + all text lines stream in ONE burst -
+     * no separate all-white clear phase between the two info pages.
+     * Each line keeps its own storage (they all used to share one buf,
+     * which made every row render the last line's text). */
+    char linebuf[12][40];                 /* 7 info + 5 fill-duration lines */
+    LcdTextLine lines[12];
+    uint8_t n = 0;
     int y = 6;
+    const int dy = 36;
 
-    snprintf(buf, sizeof buf, "%s / %.8s", comp, __DATE__);
-    LCD_DisplayStringScaled((uint16_t)ix, (uint16_t)y, buf, 2);  y += dy;
+    snprintf(linebuf[n], sizeof linebuf[n], "%s / %.8s", comp, __DATE__);
+    lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
 
-    snprintf(buf, sizeof buf, "Freq %lu MHz", mhz);
-    LCD_DisplayStringScaled((uint16_t)ix, (uint16_t)y, buf, 2);  y += dy;
+    snprintf(linebuf[n], sizeof linebuf[n], "Freq %lu MHz", mhz);
+    lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
 
-    if (LCD_BusIsHw())
-    {
-        snprintf(buf, sizeof buf, "HW SPI1 %lu MHz",
-                 LCD_HwSpiKHz() / 1000UL);
-    }
-    else
-    {
-        snprintf(buf, sizeof buf, "Bus soft (bit-bang)");
-    }
-    LCD_DisplayStringScaled((uint16_t)ix, (uint16_t)y, buf, 2);  y += dy;
+    snprintf(linebuf[n], sizeof linebuf[n], LCD_BusIsHw() ? "HW SPI1 50 MHz" : "Bus soft (bit-bang)");
+    lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
 
-    snprintf(buf, sizeof buf, "SCL=PA5 SDA=PA7");
-    LCD_DisplayStringScaled((uint16_t)ix, (uint16_t)y, buf, 2);  y += dy;
+    snprintf(linebuf[n], sizeof linebuf[n], "SCL=PA5 SDA=PA7");
+    lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
 
-    snprintf(buf, sizeof buf, "RST=PF12 DC=PD15");
-    LCD_DisplayStringScaled((uint16_t)ix, (uint16_t)y, buf, 2);  y += dy;
+    snprintf(linebuf[n], sizeof linebuf[n], "RST=PF12 DC=PD15");
+    lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
 
-    snprintf(buf, sizeof buf, "CS=PD14 BL=PE9 %u%%", (unsigned)duty);
-    LCD_DisplayStringScaled((uint16_t)ix, (uint16_t)y, buf, 2);  y += dy;
+    snprintf(linebuf[n], sizeof linebuf[n], "CS=PD14 BL=PE9 %u%%", (unsigned)duty);
+    lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
 
-    snprintf(buf, sizeof buf, "UID %08lX", (unsigned long)uid[0]);
-    LCD_DisplayStringScaled((uint16_t)ix, (uint16_t)y, buf, 2);  y += dy;
+    snprintf(linebuf[n], sizeof linebuf[n], "UID %08lX", (unsigned long)uid[0]);
+    lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
 
-    /* Solid-color fill durations, measured earlier in this pass (the
-     * TEST_STAND solids run before the info pages) - so they always
-     * reflect the current driving method. */
+    /* Solid-color fill durations, measured earlier in this pass */
     for (int i = 0; i < 5; i++)
     {
-        snprintf(buf, sizeof buf, "%-5s : %4lu ms",
+        snprintf(linebuf[n], sizeof linebuf[n], "%-5s : %4lu ms",
                  g_solid_name[i], (unsigned long)g_solid_ms[i]);
-        LCD_DisplayStringScaled((uint16_t)ix, (uint16_t)y, buf, 2);  y += dy;
+        lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
     }
 
+    LCD_DrawTextPage(0, 0, LCD_W(), LCD_H(), n, lines);
+
+    g_fps_color = fg;                     /* FPS glyph matches the page */
     g_fps_color = LCD_WHITE;              /* restore default FPS glyph color */
 
     uint32_t start = HAL_GetTick();

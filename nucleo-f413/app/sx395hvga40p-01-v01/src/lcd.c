@@ -219,6 +219,7 @@ void BlockWrite(uint16_t Xstart, uint16_t Xend, uint16_t Ystart, uint16_t Yend)
    loops stream bytes inside one BeginData/EndData burst (no per-pixel
    CS/DC toggling, HW bursts batch into 512-byte chunks).
    ===================================================================== */
+
 /* =====================================================================
    ILI9488 serial mode pixels are 18-bit RGB666 - 3 bytes per pixel
    (COLMOD 0x3A = 0x66). Convert the internal RGB565 word and emit
@@ -424,6 +425,98 @@ void LCD_SetAsciiFont(pFONT *font)
 void LCD_ShowTransparent(uint8_t mode)
 {
     s_Transparent = mode;
+}
+
+/* =====================================================================
+   Single-pass page renderer: paints the window background color and
+   every requested text line into a per-line raster buffer, then streams
+   the whole window as ONE continuous BeginData/EndData burst. Replaces
+   the separate clear-pass + per-glyph-window passes (two panel passes
+   and dozens of window setups become one).
+   Text is opaque (fg glyphs on bg), drawn with the current font at the
+   requested integer scale (1 or 2), top-left anchored per line.
+   ===================================================================== */
+static uint16_t s_page_row[320];      /* one scanline of RGB565      */
+
+void LCD_DrawTextPage(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                      uint8_t nlines, const LcdTextLine *lines)
+{
+    pFONT *font = s_AsciiFont;
+
+    if ((font == NULL) || (w == 0U) || (h == 0U) || (w > 320U))
+    {
+        return;
+    }
+
+    LCD_SetAddress(x, y, (uint16_t)(x + w - 1U), (uint16_t)(y + h - 1U));
+    LCD_BeginData();
+
+    for (uint16_t py = 0; py < h; py++)
+    {
+        /* background */
+        for (uint16_t px = 0; px < w; px++)
+        {
+            s_page_row[px] = s_BackColor;
+        }
+
+        /* glyphs covering this scanline */
+        for (uint8_t li = 0; li < nlines; li++)
+        {
+            const LcdTextLine *L = &lines[li];
+            uint16_t glyphH = (uint16_t)(font->Height * L->scale);
+
+            if (py < L->y || py >= (uint16_t)(L->y + glyphH))
+            {
+                continue;
+            }
+
+            uint16_t fontRow = (uint16_t)((py - L->y) / L->scale);
+            uint16_t bytesPerRow = (uint16_t)(font->Sizes / font->Height);
+            const char *p = L->text;
+            uint16_t cx = L->x;
+
+            while (*p != '\0')
+            {
+                uint8_t c = (uint8_t)*p;
+
+                if ((c >= 0x20U) && (c <= 0x7EU))
+                {
+                    uint8_t idx = (uint8_t)(c - 0x20U);
+                    uint16_t base = (uint16_t)((uint16_t)idx * font->Sizes
+                                   + fontRow * bytesPerRow);
+
+                    for (uint16_t col = 0; col < font->Width; col++)
+                    {
+                        uint8_t bits = font->pTable
+                            [base + (uint16_t)(col / 8U)];
+                        uint16_t color = (bits & (uint8_t)(1U << (col % 8U)))
+                                             ? s_Color : s_BackColor;
+
+                        for (uint16_t rx = 0; rx < L->scale; rx++)
+                        {
+                            uint16_t px = (uint16_t)(cx - x
+                                         + col * L->scale + rx);
+                            if (px < w)
+                            {
+                                s_page_row[px] = color;
+                            }
+                        }
+                    }
+                }
+
+                cx = (uint16_t)(cx + font->Width * L->scale);
+                p++;
+            }
+        }
+
+        /* stream the line: RGB666, 3 bytes per pixel */
+        for (uint16_t px = 0; px < w; px++)
+        {
+            lcd_write_pixel565(s_page_row[px]);
+        }
+    }
+
+    LCD_EndData();
 }
 
 void LCD_DisplayChar(uint16_t x, uint16_t y, uint8_t c)
