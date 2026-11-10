@@ -1,23 +1,22 @@
 /*
   sx395hvga40p-01-v01 main for the nucleo-f413 (STM32F413ZHT6 @ 100 MHz).
   SX395HVGA40P-01-V01 module: ILI9488 3.5" 320x480 (windows at
-  COL_Pre = ROW_Pre = 0, MADCTL 0x08, 16bpp), 4-wire SPI on both drive
-  methods (soft bit-bang fallback / HW SPI1 @ 50 MHz default), plus backlight
-  PWM on PE9.
+  COL_Pre = ROW_Pre = 0, MADCTL 0x08, 18bpp RGB666), 4-wire SPI on both
+  drive methods (soft bit-bang / HW SPI1 @ 50 MHz, DMA raster bursts),
+  plus backlight PWM on PE9.
 
   Pattern set, on BOTH drive methods:
     - big-font banner page (8x16 font), then the full pattern set:
-      info page (normal + inverted), TEST_STAND screens,
-      HSV gradient sweep, LED test - with a live FPS counter throughout;
-    - NES-size pass (centered 256x224 window) on both buses.
+      TEST_STAND screens (timed solid fills), info page (normal +
+      inverted), HSV gradient sweep, LED test - with a live FPS counter
+      throughout.
 
   Wiring: SCL=PA5, SDA=PA7, DC=PD15, RST=PF12, CS=PD14, BL=PE9
   (TIM1_CH1 PWM). No touch wiring on this
   module's connector as used here.
 
-  Clock: the F413 board tree runs APB2 at 100 MHz. SPI1 defaults to
-  12.5 MHz with prescaler /8; /4 = 25 MHz and /2 = 50 MHz via
-  LCD_SPI1_PRESC if the module proves it.
+  Clock: the F413 board tree runs APB2 at 100 MHz, so SPI1 prescaler /2
+  gives its 50 MHz maximum (25 MHz also renders clean; 12.5 MHz garbles).
 */
 
 #include <stdio.h>
@@ -409,14 +408,6 @@ int main(void)
     LCD_SetAsciiFont(&ASCII_Font16);
     paint_fps_band();
 
-    /* DMA isolation test pattern: pre-rendered black RGB666 rectangle */
-    static uint8_t s_rect[120 * 120 * 3];
-    for (uint32_t i = 0; i < sizeof s_rect; i += 3)
-    {
-        s_rect[i]     = 0x00U;
-        s_rect[i + 1] = 0x00U;
-        s_rect[i + 2] = 0x00U;
-    }
 
 
     /* -----------------------------------------------------------------

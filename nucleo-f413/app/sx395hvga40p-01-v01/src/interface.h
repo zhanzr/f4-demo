@@ -6,12 +6,12 @@
   selected at runtime:
 
     SOFT: PA5/PA7 bit-banged (idle-high SCL).
-    HW  : SPI1 AF5 (PA5 = SCK, PA7 = MOSI), mode 3 (CPOL=1, CPHA=2EDGE -
-          the same idle-high / rising-edge-sampling timing the bit-bang
-          produces), 8-bit, MSB first, NSS soft. APB2 = 100 MHz natively
-          on the F413 board tree: default prescaler /8 = 12.5 MHz SCK
-          (debug); /4 = 25 MHz and /2 = 50 MHz via LCD_SPI1_PRESC. HW
-          raster bursts stream through a 512-byte TX buffer.
+    HW  : SPI1 AF5 (PA5 = SCK, PA7 = MOSI), mode 0, 8-bit, MSB first, NSS
+          soft. APB2 = 100 MHz natively on the F413 board tree, so the
+          default prescaler /2 gives the 50 MHz SPI1 maximum. HW raster
+          data is double-buffered and streamed by DMA2 Stream5 ch3
+          (SPI1_TX) at wire speed; solid fills use a repeating color
+          pattern, so they are wire-limited too.
 
     SCL = PA5, SDA = PA7 (soft GPIO or SPI1 AF5)
     DC  = PD15 (data/command, always GPIO)
@@ -41,11 +41,12 @@ void    LCD_UseHwBus(void);     /* re-mux PA5/PA6/PA7 to SPI1 AF5 + init */
 uint8_t LCD_ReadBytes(uint8_t cmd, uint8_t *out, uint8_t nread);
                                 /* HW-only read; 0=error, 1=success       */
 
-/* Debug: stream len bytes as ONE raw DMA burst (CS low, DC high are
- * set inside; caller has done BlockWrite first). Reports the DMA CR
- * and NDTR state after the burst via the out pointers. */
-void    LCD_DmaBurstBytes(const uint8_t *buf, uint32_t len,
-                          uint32_t *cr_out, uint32_t *ndtr_out);
+/* One RGB565 pixel as the panel's 18-bit RGB666 frame (3 bytes). */
+void    LCD_WritePixelRGB565(uint16_t c565);
+
+/* npix pixels of one RGB565 color: DMA color-pattern bursts on the HW
+ * bus (wire-limited), bit-bang on the soft bus. DC high, CS low. */
+void    LCD_StreamColor565(uint16_t c565, uint32_t npix);
 uint8_t LCD_BusIsHw(void);      /* 1 while the HW SPI1 bus is selected    */
 unsigned long LCD_HwSpiKHz(void); /* active SPI1 baud in kHz (info page)  */
 void    LCD_HwSetPrescaler(uint8_t presc); /* runtime SCK switch (sweep) */

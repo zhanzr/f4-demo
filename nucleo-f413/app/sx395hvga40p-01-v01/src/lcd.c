@@ -1,7 +1,7 @@
 /*
   lcd.c - ILI9488 3.5" 320x480 LCD driver (nucleo-f413 port,
   SX395HVGA40P-01-V01 module). Classic ILI9488 init (vendor-verbatim:
-  F7/C0/C1/C5/B1/B4/B6/B7/BE/E9 power+timing, gamma tables, 16bpp COLMOD,
+  F7/C0/C1/C5/B1/B4/B6/B7/BE/E9 power+timing, gamma tables, 18bpp COLMOD,
   MADCTL 0x08, sleep out + 120 ms, display on) over 4-wire SPI - the
   command byte goes out with DC low, every data byte with DC high.
 
@@ -19,8 +19,8 @@
 
 /* ---- runtime drawing window ----
  * Every draw is relative to this window (origin + size). It defaults to
- * the full panel and can be shrunk at runtime (e.g. to a centered
- * 256x224 NES window); the surrounding area keeps its previous content. */
+ * the full panel and can be shrunk at runtime; the surrounding area keeps
+ * its previous content. */
 static uint16_t s_win_x = 0, s_win_y = 0;
 static uint16_t s_win_w = COL, s_win_h = ROW;
 
@@ -99,7 +99,8 @@ void LCD_RESET(void)
 /* =====================================================================
    Init sequence - ILI9488 (vendored SX040HVGA40P-01-V01 example,
    verbatim registers): F7 unlock, power/VCOM/timing (C0/C1/C5/B1/B4/
-   B6/B7/BE/E9), MADCTL 0x08, 16bpp COLMOD, positive/negative gamma
+   B6/B7/BE/E9), MADCTL 0x08, 18bpp COLMOD (serial mode needs the
+  3-byte RGB666 frame), positive/negative gamma
    (E0/E1), sleep out + 120 ms, display on.
    ===================================================================== */
 void LCD_IC_Init(void)
@@ -227,77 +228,63 @@ void BlockWrite(uint16_t Xstart, uint16_t Xend, uint16_t Ystart, uint16_t Yend)
    ===================================================================== */
 static void lcd_write_pixel565(uint16_t c565)
 {
-    LCD_WriteDataFast((uint8_t)(((c565 >> 8) & 0xF8U) | ((c565 >> 13) & 0x07U)));
-    LCD_WriteDataFast((uint8_t)(((c565 >> 3) & 0xFCU) | ((c565 >> 9) & 0x03U)));
-    LCD_WriteDataFast((uint8_t)((c565 << 3) & 0xF8U));
+    LCD_WritePixelRGB565(c565);
 }
 
-
-/* DMA debug sink (called from interface.c after each DMA burst). */
-void LCD_DmaDebug(uint32_t len, uint32_t cycles, uint32_t sr,
-                  uint32_t cr, uint32_t ndtr)
+/* Stream npix pixels of one RGB565 color into the open window. */
+static void lcd_fill_area(uint32_t npix, uint16_t c565)
 {
-    printf("[DMA] len=%lu cycles=%lu (%lu ns/byte) SR=%08lX CR=%08lX NDTR=%lu\r\n",
-           (unsigned long)len, (unsigned long)cycles,
-           (unsigned long)(cycles / (len ? len : 1U) / 100U),
-           (unsigned int)sr, (unsigned int)cr, (unsigned int)ndtr);
+    LCD_BeginData();
+    LCD_StreamColor565(c565, npix);
+    LCD_EndData();
 }
 
 void DispColor(uint32_t color)
 {
-    int i, j;
+    uint32_t n = (uint32_t)LCD_W() * LCD_H();
+
     BlockWrite(0, LCD_W() - 1U, 0, LCD_H() - 1U);
-    LCD_BeginData();
-    for (i = 0; i < (int)LCD_H(); i++)
-    {
-        for (j = 0; j < (int)LCD_W(); j++)
-        {
-            lcd_write_pixel565(color);
-        }
-    }
-    LCD_EndData();
+    lcd_fill_area(n, (uint16_t)color);
 }
 
 void DispFrame(void)
 {
-    /* red frame, white interior (18-bit pixels via the 565 helper) */
-    int i, j;
-    BlockWrite(0, LCD_W() - 1U, 0, LCD_H() - 1U);
-    LCD_BeginData();
-    for (j = 0; j < (int)LCD_H(); j++)
-    {
-        for (i = 0; i < (int)LCD_W(); i++)
-        {
-            if (j == 0 || j == (int)LCD_H() - 1 ||
-                i == 0 || i == (int)LCD_W() - 1)
-            {
-                lcd_write_pixel565(0xF800U);   /* red */
-            }
-            else
-            {
-                lcd_write_pixel565(0xFFFFU);   /* white */
-            }
-        }
-    }
-    LCD_EndData();
+    /* white interior, red 1-px border - five color streams */
+    uint16_t w = LCD_W(), h = LCD_H();
+
+    BlockWrite(0, (uint16_t)(w - 1U), 0, (uint16_t)(h - 1U));
+    lcd_fill_area((uint32_t)w * h, 0xFFFFU);            /* white */
+
+    BlockWrite(0, (uint16_t)(w - 1U), 0, 0);
+    lcd_fill_area(w, 0xF800U);                          /* top row */
+
+    BlockWrite(0, (uint16_t)(w - 1U),
+               (uint16_t)(h - 1U), (uint16_t)(h - 1U));
+    lcd_fill_area(w, 0xF800U);                          /* bottom row */
+
+    BlockWrite(0, 0, 1, (uint16_t)(h - 2U));
+    lcd_fill_area((uint32_t)(h - 2U), 0xF800U);         /* left column */
+
+    BlockWrite((uint16_t)(w - 1U), (uint16_t)(w - 1U), 1, (uint16_t)(h - 2U));
+    lcd_fill_area((uint32_t)(h - 2U), 0xF800U);         /* right column */
 }
 
 void DispGrayHor16(void)
 {
-    int i, j, k;
+    /* 16 gray segments per scanline, each one color stream */
+    int i, j;
+    uint16_t rem = (uint16_t)(LCD_W() % 16);
+
     BlockWrite(0, LCD_W() - 1U, 0, LCD_H() - 1U);
     LCD_BeginData();
     for (i = 0; i < (int)LCD_H(); i++)
     {
-        for (j = 0; j < (int)LCD_W() % 16; j++) { lcd_write_pixel565(0x0000U); }
+        if (rem != 0U) { LCD_StreamColor565(0x0000U, rem); }
         for (j = 0; j < 16; j++)
         {
             uint16_t c = (uint16_t)(((((j * 2) << 3) | ((j * 4) >> 3)) << 8) |
                                     (((j * 4) << 5) | (j * 2)));
-            for (k = 0; k < (int)LCD_W() / 16; k++)
-            {
-                lcd_write_pixel565(c);
-            }
+            LCD_StreamColor565(c, (uint32_t)(LCD_W() / 16));
         }
     }
     LCD_EndData();
@@ -307,26 +294,17 @@ void DispBand(void)
 {
     static const uint16_t color[8] = { 0xF800, 0xF800, 0x07E0, 0x07E0,
                                        0x001F, 0x001F, 0xFFFF, 0xFFFF };
-    int i, j, k;
+    int i;
+    uint32_t rows = (uint32_t)(LCD_H() / 8) * LCD_W();
+
     BlockWrite(0, LCD_W() - 1U, 0, LCD_H() - 1U);
     LCD_BeginData();
     for (i = 0; i < 8; i++)
     {
-        for (j = 0; j < (int)LCD_H() / 8; j++)
-        {
-            for (k = 0; k < (int)LCD_W(); k++)
-            {
-                lcd_write_pixel565(color[i]);
-            }
-        }
+        LCD_StreamColor565(color[i], rows);
     }
-    for (j = 0; j < (int)LCD_H() % 8; j++)
-    {
-        for (k = 0; k < (int)LCD_W(); k++)
-        {
-            lcd_write_pixel565(color[7]);
-        }
-    }
+    LCD_StreamColor565(color[7],
+                       (uint32_t)(LCD_H() % 8) * LCD_W());
     LCD_EndData();
 }
 
@@ -393,27 +371,16 @@ void LCD_SetAddress(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 
 void LCD_Clear(void)
 {
-    uint32_t n = (uint32_t)s_win_w * s_win_h;
-    LCD_SetAddress(0, 0, s_win_w - 1, s_win_h - 1);
-    LCD_BeginData();
-    while (n--)
-    {
-        lcd_write_pixel565(s_BackColor);
-    }
-    LCD_EndData();
+    LCD_SetAddress(0, 0, (uint16_t)(s_win_w - 1U), (uint16_t)(s_win_h - 1U));
+    lcd_fill_area((uint32_t)s_win_w * s_win_h, s_BackColor);
 }
 
 void LCD_ClearRect(uint16_t x, uint16_t y, uint16_t width, uint16_t height)
 {
     uint32_t n = (uint32_t)width * height;
     if (n == 0U) { return; }
-    LCD_SetAddress(x, y, x + width - 1, y + height - 1);
-    LCD_BeginData();
-    while (n--)
-    {
-        lcd_write_pixel565(s_BackColor);
-    }
-    LCD_EndData();
+    LCD_SetAddress(x, y, (uint16_t)(x + width - 1U), (uint16_t)(y + height - 1U));
+    lcd_fill_area(n, s_BackColor);
 }
 
 /* ---- ASCII text ---- */
@@ -651,24 +618,16 @@ void LCD_DrawPoint(uint16_t x, uint16_t y, uint32_t color)
 
 void LCD_DrawLine_V(uint16_t x, uint16_t y, uint16_t height)
 {
-    LCD_SetAddress(x, y, x, (uint16_t)(y + height - 1));
-    LCD_BeginData();
-    while (height--)
-    {
-        lcd_write_pixel565(s_Color);
-    }
-    LCD_EndData();
+    if (height == 0U) { return; }
+    LCD_SetAddress(x, y, x, (uint16_t)(y + height - 1U));
+    lcd_fill_area(height, s_Color);
 }
 
 void LCD_DrawLine_H(uint16_t x, uint16_t y, uint16_t width)
 {
-    LCD_SetAddress(x, y, (uint16_t)(x + width - 1), y);
-    LCD_BeginData();
-    while (width--)
-    {
-        lcd_write_pixel565(s_Color);
-    }
-    LCD_EndData();
+    if (width == 0U) { return; }
+    LCD_SetAddress(x, y, (uint16_t)(x + width - 1U), y);
+    lcd_fill_area(width, s_Color);
 }
 
 void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
@@ -746,13 +705,8 @@ void LCD_FillRect(uint16_t x, uint16_t y, uint16_t width, uint16_t height)
 {
     uint32_t n = (uint32_t)width * height;
     if (n == 0U) { return; }
-    LCD_SetAddress(x, y, (uint16_t)(x + width - 1), (uint16_t)(y + height - 1));
-    LCD_BeginData();
-    while (n--)
-    {
-        lcd_write_pixel565(s_Color);
-    }
-    LCD_EndData();
+    LCD_SetAddress(x, y, (uint16_t)(x + width - 1U), (uint16_t)(y + height - 1U));
+    lcd_fill_area(n, s_Color);
 }
 
 void LCD_FillCircle(uint16_t x, uint16_t y, uint16_t r)

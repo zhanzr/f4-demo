@@ -60,10 +60,11 @@ Pattern set (per pass, live FPS counter throughout):
    **labeled on-panel**, and the durations are reset every pass, so they
    always belong to the current driving method.
 
-   Measured at the 50 MHz SPI1 rate (460,800 bytes per fill): **~323 ms
-   per solid fill** - wire time alone is ~74 ms; the per-byte buffered
-   write path is the remaining overhead (a `LCD_FillBulk`-style register
-   loop is the next optimization if more speed is needed).
+   Measured at the 50 MHz SPI1 rate (460,800 bytes per fill): **~76 ms
+   per solid fill**, i.e. the wire time (460,800 x 8 bits / 50 MHz =
+   74 ms) nearly exactly - the fills are streamed by DMA from a prepared
+   color pattern, so no per-byte CPU work is left in the path. The soft
+   pass takes ~1147 ms per fill (bit-bang, unchanged in method).
 2. **Info page** (normal, then **inverted**): compiler, build date, CPU
    frequency, drive method (soft bit-bang / HW SPI1), the IO map, live
    backlight duty, the UID, and the measured **"xx : xx ms"**
@@ -83,35 +84,52 @@ an advanced timer), default **15 % duty** on the soft pass and **30 %**
 on the HW pass (`Backlight_SetDuty()` rescales CCR1 for 0..100 %,
 `Backlight_GetDuty()` reports the live duty shown on the info page).
 
-## DMA experiment (not enabled; direction documented)
+## DMA raster path (DMA2 Stream5 ch3 -> SPI1_TX)
 
-An experimental DMA raster path was implemented register-level and then
-**disabled** (build flag `LCD_USE_DMA`, default 0 in `src/interface.c`):
-DMA2 Stream5, channel 3 -> SPI1_TX, byte transfers, memory-increment,
-armed per 4 KB buffer flush (`spi_hw_tx`).
+Raster bytes are rendered into **one of two 4 KB buffers** and
+streamed by DMA, so byte generation and the wire overlap;
+solid fills skip generation altogether (`LCD_StreamColor565`: a 1024-pixel
+color pattern re-armed as repeated bursts). Configuration is raw
+register-level - byte transfers, memory-increment, peripheral fixed,
+direct mode (no FIFO), normal mode, very high priority, polled to
+completion, no NVIC. Commands and short tails (< 32 bytes) stay on the
+polled per-byte path.
 
-Observed on hardware: the bursts **complete** (DMA2 HISR TCIF5+HTIF5
-verified via SWD) yet the panel shows nothing, while small per-byte
-writes (< 32 bytes) render fine. So the bytes are consumed by the SPI
-but never reach the panel correctly. Suspects, in order:
+### Why the earlier attempt appeared to fail
 
-- missing FIFO/burst configuration on byte-wide DMA streams;
-- SPI CR2 DMAEN handling specifics on the F413;
-- the RX side never being drained by DMA (full-duplex overruns) -
-  arming the RX stream alongside TX is the standard fix to try first.
+Both earlier variants were **false negatives**, not a DMA hardware
+problem:
 
-This repo previously had **no SPI-DMA usage anywhere** (nano-f411 only
-enables the HAL DMA module), so there was no in-repo reference to copy;
-the direction above is the documented starting point for resuming.
-Current fills run at 323 ms via the CPU-polled per-byte path; wire time
-at 50 MHz is ~74 ms, so DMA would gain ~4x once fixed.
+- the HAL-managed path (`HAL_SPI_Transmit_DMA`) returned **HAL_BUSY** and
+  the return value was ignored: `HAL_DMA_Start_IT()` takes the handle
+  lock and sets `State = BUSY`, and both are only released by the DMA
+  transfer-complete *interrupt* - which was never enabled. Every burst
+  after the first silently transmitted nothing, while the code polled
+  NDTR (0 from the previous burst) and "completed" instantly;
+- the register-level debug helper framed no CS (it never pulled CS low),
+  so its bytes were clocked out on a deselected panel and dropped.
+
+Measured with DMA now: a 9600-byte burst takes **153,607 core cycles =
+16 cycles/byte** - exactly 8 bits x 20 ns at 50 MHz, so every byte is
+really on the wire. A stalled burst would finish in a few cycles
+regardless of length, which is the quick way to tell the two apart.
+
+### Facts verified on the panel
+
+- Stream5/ch3 (the standard F4 SPI1_TX mapping) is correct; Stream3/ch3
+  is not usable (partial transfers only).
+- 2-line full duplex with the RX side left undrained works: the overrun
+  flag does **not** stall TX, so no RX stream/drain is needed during a
+  burst. 1-line (half-duplex) also works but is not required.
+- 25 MHz and 50 MHz both render clean; 12.5 MHz garbles (panel clock
+  divider window) - the same rate caveat as the polled path.
 
 ## Files
 
 - `src/main.c` - pattern set on both buses: banner, info (normal +
   inverted), TEST_STAND (timed solids), gradient, LED test
 - `src/interface.c` / `interface.h` - soft bit-bang + HW SPI1 dual-bus
-  primitives, LCD_DrawTextPage support
+  primitives, double-buffered SPI1_TX DMA bursts, color-pattern streamer
 - `src/lcd.c` / `lcd.h` - ILI9488 init + 320x480 geometry + drawing API
   (RGB666 pixel writer, single-pass page renderer) + `LCD_Reinit`
 - `src/backlight.c` / `backlight.h` - PE9/TIM1_CH1 PWM (+ duty getter)
