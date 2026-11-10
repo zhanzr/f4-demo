@@ -27,6 +27,7 @@
 #include "interface.h"
 #include "lcd/lcd_font_1608.h"
 #include "backlight.h"
+#include "touch.h"
 
 #define SCREEN_W   LCD_Width     /* 320 max (buffer sizing) */
 #define SCREEN_H   LCD_Height    /* 480 */
@@ -266,11 +267,11 @@ static void info_demo(uint32_t ms, uint8_t invert)
      * no separate all-white clear phase between the two info pages.
      * Each line keeps its own storage (they all used to share one buf,
      * which made every row render the last line's text). */
-    char linebuf[12][40];                 /* 7 info + 5 fill-duration lines */
-    LcdTextLine lines[12];
+    char linebuf[13][40];                 /* 8 info + 5 fill-duration lines */
+    LcdTextLine lines[13];
     uint8_t n = 0;
     int y = 6;
-    const int dy = 36;
+    const int dy = 33;
 
     snprintf(linebuf[n], sizeof linebuf[n], "%s / %.8s", comp, __DATE__);
     lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
@@ -292,6 +293,10 @@ static void info_demo(uint32_t ms, uint8_t invert)
     lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
 
     snprintf(linebuf[n], sizeof linebuf[n], "UID %08lX", (unsigned long)uid[0]);
+    lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
+
+    snprintf(linebuf[n], sizeof linebuf[n], "TP %s",
+             Touch_Ok() ? "FT6336 ok" : "not found");
     lines[n].text = linebuf[n];  lines[n].x = 2U;  lines[n].y = (uint16_t)y;  lines[n].scale = 2U; n++; y += dy;
 
     /* Solid-color fill durations, measured earlier in this pass */
@@ -351,6 +356,96 @@ static void banner_page(const char *l1, const char *l2,
 }
 
 /* --------------------------------------------------------------------- */
+/* Touch test: five targets, a paint trail and a live coordinate readout.
+ * The targets double as an orientation check - a tap on TL must leave its
+ * trail inside the red square (if not, flip TP_FLIP_X / TP_FLIP_Y /
+ * TP_SWAP_XY in touch.h).                                               */
+static void touch_demo(uint32_t ms)
+{
+    static const struct
+    {
+        uint16_t x, y;
+        uint32_t color;
+        const char *name;
+    } tgt[5] =
+    {
+        {  20,  60, LCD_RED,    "TL" },
+        { 264,  60, LCD_GREEN,  "TR" },
+        {  20, 380, LCD_BLUE,   "BL" },
+        { 264, 380, LCD_YELLOW, "BR" },
+        { 142, 220, LCD_WHITE,  "C"  },
+    };
+    TouchPoint tp;
+    char buf[32];
+    uint32_t start = HAL_GetTick();
+    uint8_t  was = 0U;
+
+    LCD_SetAsciiFont(&ASCII_Font16);
+    LCD_SetColor(LCD_WHITE);
+    LCD_SetBackColor(LCD_BLACK);
+    LCD_Clear();
+    LCD_DisplayString(4, 4, "TOUCH TEST");
+    LCD_DisplayString(4, 24, "tap the 5 targets");
+
+    for (int i = 0; i < 5; i++)
+    {
+        LCD_SetColor(tgt[i].color);
+        LCD_FillRect(tgt[i].x, tgt[i].y, 36, 36);
+        LCD_SetColor(LCD_BLACK);
+        LCD_DisplayString((uint16_t)(tgt[i].x + 12U),
+                          (uint16_t)(tgt[i].y + 12U), (char *)tgt[i].name);
+    }
+
+    if (Touch_Ok() == 0U)
+    {
+        LCD_SetColor(LCD_RED);
+        LCD_DisplayString(4, 440, "touch: not found");
+        HAL_Delay(ms);
+        return;
+    }
+
+    do
+    {
+        Touch_Scan(&tp);
+
+        if (tp.pressed != 0U)
+        {
+            uint16_t px = tp.x;
+            uint16_t py = tp.y;
+
+            if (px > (uint16_t)(LCD_W() - 6U)) { px = (uint16_t)(LCD_W() - 6U); }
+            if (py > (uint16_t)(LCD_H() - 6U)) { py = (uint16_t)(LCD_H() - 6U); }
+
+            LCD_SetColor(LCD_MAGENTA);
+            LCD_FillRect(px, py, 5U, 5U);
+
+            if (was == 0U)
+            {
+                printf("[TP] down x=%u y=%u raw=%u,%u fingers=%u\r\n",
+                       (unsigned)tp.x, (unsigned)tp.y,
+                       (unsigned)tp.raw_x, (unsigned)tp.raw_y,
+                       (unsigned)tp.fingers);
+            }
+
+            snprintf(buf, sizeof buf, "x%3u y%3u r%3u,%3u",
+                     (unsigned)tp.x, (unsigned)tp.y,
+                     (unsigned)tp.raw_x, (unsigned)tp.raw_y);
+            LCD_SetColor(LCD_WHITE);
+            LCD_SetBackColor(LCD_BLACK);
+            LCD_DisplayString(2, 440, buf);
+        }
+        else if (was != 0U)
+        {
+            printf("[TP] up\r\n");
+        }
+        was = tp.pressed;
+
+        fps_update();
+        HAL_Delay(5);
+    } while ((HAL_GetTick() - start) < ms);
+}
+
+/* --------------------------------------------------------------------- */
 /* Full test-pattern set. The solid-color fills run FIRST (they are timed
  * for the current driving method), then the two info pages display the
  * measured durations.                                                   */
@@ -368,6 +463,9 @@ static void run_patterns(void)
 
     printf("[LCD] phase: gradient\r\n");
     gradient_demo(4000);
+
+    printf("[LCD] phase: touch test%s\r\n", Touch_Ok() ? "" : " (no controller)");
+    touch_demo(Touch_Ok() ? 15000U : 5000U);
 
     printf("[LCD] phase: LED test\r\n");
     led_test();
@@ -397,6 +495,9 @@ int main(void)
     LCD_Reinit();
     LCD_SetAsciiFont(&ASCII_Font16);
     paint_fps_band();
+
+    /* Capacitive touch: I2C1 (PB8/PB9) + reset (PG3) + INT (PG2). */
+    (void)Touch_Init();
 
 
 

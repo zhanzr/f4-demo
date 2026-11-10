@@ -65,35 +65,62 @@ The dedicated 6-pin touch header **J4** (`VCC SDA SCL INT RST GND`) is
 the cleaner place to pick the I2C signals up; the module already fits
 10K pull-ups on SDA/SCL there (R14/R15).
 
-## Touch: reserved pin plan (not implemented yet)
+## Capacitive touch (FT6336U)
 
-| Signal | Planned MCU pin | Peripheral | Note |
-| ------ | --------------- | ---------- | ---- |
-| T_INT | **PG2** | GPIO input, EXTI2 | free on LQFP144 |
-| T_RST | **PG3** | GPIO output | low active, 20 ms + 300 ms settle |
-| T_SCL | **PB8** | I2C1_SCL (AF4) | hardware I2C available |
-| T_SDA | **PB9** | I2C1_SDA (AF4) | hardware I2C available |
+Implemented in `src/touch.c` / `src/touch.h` on **I2C1**:
 
-Feasibility check against this board and the rest of this project:
+| Signal | MCU pin | Peripheral | Note |
+| ------ | ------- | ---------- | ---- |
+| T_SCL | **PB8** | I2C1_SCL (AF4) | open drain, `GPIO_NOPULL` (module has 10K) |
+| T_SDA | **PB9** | I2C1_SDA (AF4) | open drain, `GPIO_NOPULL` |
+| T_RST | **PG3** | GPIO output | low 20 ms -> high, then 300 ms boot |
+| T_INT | **PG2** | GPIO input, pull-up | open drain, active low |
 
-- PB8/PB9 are exactly **I2C1 SCL/SDA on AF4** on the STM32F4 family, so
-  the pair gives a hardware I2C master (no bit-bang needed). APB1 runs
-  at 50 MHz here, comfortably inside I2C1's range; FT6336U tops out at
-  400 kHz (fast mode, 100 kHz is a safe start).
-- PG2/PG3 are plain GPIO on the 144-pin package. Nothing else in this
-  project or the board layer uses them (LEDs PB0/PB7/PB14, button PC13,
-  console USART3 PD8/PD9, display PA5/PA6/PA7/PD14/PD15/PF12/PE9), and
-  no other pin on EXTI line 2 is in use, so PG2 can interrupt freely.
-- The module already carries the I2C pull-ups; nothing extra is needed.
-  FT6336U answers at 7-bit **0x38** (write 0x70 / read 0x71).
-- Nothing on PG2/PG3/PB8/PB9 conflicts with SPI1 (PB8/PB9 are also
-  TIM4_CH3/CH4 and I2C1 - both unused here).
+Taken from the module's 6-pin touch header **J4**
+(`VCC SDA SCL INT RST GND`) or pins 10..14 of the 14-pin header
+(`TP_SCK`=SCL, `TP_CS`=CTP_RST, `TP_SDI`=SDA, `TP_SDO`=nc, `TP_IRQ`=INT).
 
-Verdict: the plan is **electrically and peripherally sound** - no
-conflicts, one hardware I2C available, one free EXTI line. Two things to
-watch when wiring: keep the I2C lines short (10K pull-ups are weak-ish
-for long leads) and do not add internal pull-ups on top of the module's
-(prefer `GPIO_NOPULL` + AF4 open-drain).
+Driver notes:
+
+- HAL I2C1 at **400 kHz** (APB1 = 50 MHz), 10 ms timeout per transfer.
+  A NACK/stuck bus is recovered by an I2C1 software reset (SWRST) and
+  re-init, so a glitch cannot wedge the port.
+- Slave address **0x38** (write 0x70 / read 0x71). Init reads the info
+  block at 0xA0 (16 bytes, printed on the console), then writes
+  `ID_G_MODE (0xA4) = 0x00` for **interrupt-trigger** mode (power-on
+  default is polling).
+- Each scan reads `TD_STATUS (0x02)` and, when the low nibble is non
+  zero, the 6-byte point block at `0x03` (XH/XL/YH/YL/weight/misc). The
+  event flag in XH bits 7:6 is honoured (press 0, contact 2 accepted;
+  release 1 and reserved 3 dropped).
+- The demo polls every ~5 ms and treats a low INT as an immediate hint,
+  but never depends on it - a stuck INT cannot block input.
+- No NVM is used: calibration lives in build macros, not on the chip.
+
+### Coordinate mapping (measured on this module)
+
+The controller reports **320x480 in the same orientation as the
+framebuffer** - no swap and no flip (MADCTL 0x48 already compensates the
+panel's source-driver side, and the CTP is bonded in the normal viewing
+orientation). Corner-to-corner check: taps map 1:1 (`x` 31..298,
+`y` 67..397 over the five targets). If a future build ever trails
+wrongly, the knobs are `TP_FLIP_X`, `TP_FLIP_Y`, `TP_SWAP_XY`
+(defaults 0/0/0) plus `TP_RAW_W` / `TP_RAW_H` for a differently scaled
+controller.
+
+### Feasibility notes (why this pin set)
+
+- PB8/PB9 are exactly the I2C1 AF4 pair on this family, so the touch gets
+  a hardware I2C master; APB1 = 50 MHz is comfortably inside I2C1's range
+  and 400 kHz fast mode is well within the FT6336U limit.
+- PG2/PG3 are plain GPIO on the 144-pin package; nothing else in the
+  board layer or this project uses them, and no other pin sits on EXTI
+  line 2, so PG2 can interrupt freely.
+- No conflict with SPI1 (PA5/PA6/PA7), the display control lines
+  (PD14/PD15/PF12/PE9), the console (PD8/PD9), the LEDs (PB0/PB7/PB14)
+  or the user button (PC13). PB8/PB9 are also TIM4_CH3/CH4, unused here.
+- The module already fits 10K pull-ups on SDA/SCL, so nothing external is
+  needed; keep the leads short.
 
 ## Demo loop
 
@@ -114,11 +141,17 @@ Pattern set (live FPS counter throughout):
    drive method.
 2. **Info page** (normal, then inverted): compiler, build date, CPU
    frequency, drive method + pixel format, the IO map, backlight duty,
-   the UID and the measured fill times. Both pages are painted by the
+   the UID, the touch controller status (FT6336 ok / not found) and the
+   measured fill times. Both pages are painted by the
    single-pass renderer (`LCD_DrawTextPage`): background and every text
    line in one continuous raster stream.
 3. **Gradient** - animated HSV hue sweep (4 s per sweep).
-4. **LED test** - board LED LD1 (PB0) on/off.
+4. **Touch test** (15 s): five targets (red TL, green TR, blue BL,
+   yellow BR, white C) on a black page; a magenta trail is painted where
+   the finger is, a live `x / y / raw` readout sits above the FPS band,
+   and every press/release is printed to the console with both the mapped
+   and the raw controller coordinates.
+5. **LED test** - board LED LD1 (PB0) on/off.
 
 ## Measured
 
@@ -150,7 +183,6 @@ wire; 2-line full duplex needs no RX drain (overrun does not stall TX).
 
 ## Not implemented yet
 
-- **Touch (FT6336U)**: pins reserved as above; driver comes next.
 - **Panel reads (RDDID)**: the module routes SPI_SDO to the header, so
   reading the controller ID is possible later - the ST7796S form is one
   dummy byte after the command (the vendor demo's `LCD_ReadPoint` shows
@@ -164,6 +196,8 @@ wire; 2-line full duplex needs no RX drain (overrun does not stall TX).
   primitives, double-buffered SPI1_TX DMA bursts, 16-bit color streamer
 - `src/lcd.c` / `lcd.h` - ST7796S init + 320x480 geometry + drawing API
   (RGB565 pixel writer, single-pass page renderer, `LCD_MADCTL` knob)
+- `src/touch.c` / `touch.h` - FT6336U on I2C1 (PB8/PB9, RST PG3,
+  INT PG2): reset/probe, interrupt-mode setup, point read + mapping
 - `src/backlight.c` / `backlight.h` - PE9/TIM1_CH1 PWM (+ duty getter)
 - `src/lcd/lcd_fonts.c` / `lcd_fonts.h` - ASCII 6x12 font
 - `src/lcd/lcd_font_1608.c` / `lcd_font_1608.h` - ASCII 8x16 banner font

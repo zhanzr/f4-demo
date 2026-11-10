@@ -31,6 +31,7 @@ add_executable(${PROJECT_NAME}.elf
     src/lcd/lcd_fonts.c
     src/lcd/lcd_font_1608.c
     src/backlight.c
+    src/touch.c
 )
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/stm32f413_board.cmake)

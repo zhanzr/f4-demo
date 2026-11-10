@@ -59,6 +59,8 @@ function(stm32f413_apply_board TGT OPT)
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_cortex.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_dma.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_gpio.c
+        ${STM32F4_HAL_SRC}/stm32f4xx_hal_i2c.c
+        ${STM32F4_HAL_SRC}/stm32f4xx_hal_i2c_ex.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_flash.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_flash_ex.c
         ${STM32F4_HAL_SRC}/stm32f4xx_hal_pwr.c

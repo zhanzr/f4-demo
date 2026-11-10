@@ -51,9 +51,9 @@ uint16_t LCD_H(void);         /* current window height */
 #define LCD_GPIO_PortMISO   GPIOA
 #define LCD_MISO_Pin        GPIO_PIN_6   /* panel SDO, wired for read-back */
 
-/* ---- reserved for the FT6336U capacitive touch (not driven yet) ----------
- * T_INT = PG2 (EXTI2, active low), T_RST = PG3 (active low),
- * T_SCL = PB8 (I2C1_SCL, AF4),   T_SDA = PB9 (I2C1_SDA, AF4).
+/* ---- FT6336U capacitive touch (driven by src/touch.c) -------------------
+ * T_INT = PG2 (active low), T_RST = PG3 (active low),
+ * T_SCL = PB8 (I2C1_SCL, AF4), T_SDA = PB9 (I2C1_SDA, AF4).
  * The module carries 10K pull-ups on SDA/SCL; slave address 0x38. */
 #define TOUCH_INT_Pin       GPIO_PIN_2
 #define TOUCH_INT_GPIO_Port GPIOG
