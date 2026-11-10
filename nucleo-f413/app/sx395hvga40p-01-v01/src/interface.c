@@ -41,7 +41,9 @@
 /* EXPERIMENTAL DMA raster bursts (see spi_hw_tx): default OFF - the
  * bursts complete but the panel shows nothing yet. */
 #ifndef LCD_USE_DMA
-#define LCD_USE_DMA 0
+#define LCD_USE_DMA 0    /* DMA bursts complete but the panel never
+                          * receives them (documented in README);
+                          * per-byte polled path is the default. */
 #endif
 
 static uint8_t           s_tx_buf[SPI_TX_BUF_SIZE];
@@ -49,7 +51,8 @@ static uint8_t           s_rx_sink[SPI_TX_BUF_SIZE];
 static uint16_t          s_tx_len;
 static uint8_t           s_burst16;   /* 1 = inside a raster burst (16-bit
                                        * frames carry 2 bytes each)       */
-static SPI_HandleTypeDef s_hspi;
+static SPI_HandleTypeDef    s_hspi;
+static DMA_HandleTypeDef    s_hdma_tx;
 static uint8_t           s_spi_ready;
 static uint8_t           s_bus_hw;       /* 0 = soft (GPIO), 1 = HW SPI1    */
 
@@ -58,7 +61,7 @@ static uint8_t           s_bus_hw;       /* 0 = soft (GPIO), 1 = HW SPI1    */
 static uint8_t s_soft_pace = 0U;   /* 0 = fastest BSRR soft (~5-7 MHz) */   /* volatile-loop iterations per half-bit:
                                        * 1 ~= 2.5 MHz with BSRR writes
                                        * (0 = ~5 MHz, retest with fonts) */
-static uint8_t s_soft_slew_high = 0U;
+static uint8_t s_soft_slew_high = 1U;
 
 void CS_SET(void)
 {
@@ -92,6 +95,25 @@ static void spi_hw_init(void)
     s_hspi.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;
     s_hspi.Init.CRCPolynomial     = 7U;
     (void)HAL_SPI_Init(&s_hspi);
+
+#if LCD_USE_DMA
+    /* SPI1_TX DMA: DMA2 Stream5 channel 3, HAL-managed. NOTE: on this
+     * module the DMA bursts complete but the panel never receives the
+     * data - kept for future investigation. */
+    __HAL_RCC_DMA2_CLK_ENABLE();
+    s_hdma_tx.Instance                 = DMA2_Stream5;
+    s_hdma_tx.Init.Channel             = DMA_CHANNEL_3;
+    s_hdma_tx.Init.Direction           = DMA_MEMORY_TO_PERIPH;
+    s_hdma_tx.Init.PeriphInc           = DMA_PINC_DISABLE;
+    s_hdma_tx.Init.MemInc              = DMA_MINC_ENABLE;
+    s_hdma_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    s_hdma_tx.Init.MemDataAlignment    = DMA_MDATAALIGN_BYTE;
+    s_hdma_tx.Init.Mode                = DMA_NORMAL;
+    s_hdma_tx.Init.Priority            = DMA_PRIORITY_HIGH;
+    (void)HAL_DMA_Init(&s_hdma_tx);
+    __HAL_LINKDMA(&s_hspi, hdmatx, s_hdma_tx);
+#endif
+
     s_spi_ready = 1U;
 }
 
@@ -168,26 +190,23 @@ static void spi_hw_tx(uint8_t *buf, uint16_t len)
     spi_hw_enable();
 
 #if LCD_USE_DMA
-    /* EXPERIMENTAL (not enabled by default): DMA bursts complete
-     * (TCIF5 sets) but the panel shows nothing - under investigation.
-     * DMA2 Stream5 channel 3 -> SPI1_TX, byte-wide, mem increment. */
     if (len >= 32U)
     {
-        DMA2_Stream5->CR = 0U;
-        while (DMA2_Stream5->CR & DMA_SxCR_EN) { }
+        /* HAL-managed DMA: arm Stream5, TXDMAEN, start. No NVIC - poll
+         * the stream counter for completion, then resync the HAL state
+         * (the TC interrupt would normally do this). */
+        (void)HAL_SPI_Transmit_DMA(&s_hspi, buf, len);
+        while (__HAL_DMA_GET_COUNTER(&s_hdma_tx) != 0U) { }
+        while ((SPI1->SR & SPI_SR_BSY) != 0U) { }
+        s_hspi.State = HAL_SPI_STATE_READY;
 
-        DMA2_Stream5->PAR  = (uint32_t)&SPI1->DR;
-        DMA2_Stream5->M0AR = (uint32_t)buf;
-        DMA2_Stream5->NDTR = len;
-        DMA2_Stream5->CR = DMA_SxCR_CHSEL_0 | DMA_SxCR_CHSEL_1
-                         | DMA_SxCR_MINC
-                         | DMA_SxCR_DIR_0
-                         | DMA_SxCR_PL_1
-                         | DMA_SxCR_EN;
-
-        SPI1->CR2 |= SPI_CR2_TXDMAEN;
-        while (DMA2_Stream5->CR & DMA_SxCR_EN) { }
-        SPI1->CR2 &= ~SPI_CR2_TXDMAEN;
+        /* drain RX (full-duplex overruns otherwise) */
+        while ((SPI1->SR & SPI_SR_RXNE) != 0U) { (void)SPI1->DR; }
+        if ((SPI1->SR & SPI_SR_OVR) != 0U)
+        {
+            (void)SPI1->DR;
+            (void)SPI1->SR;
+        }
     }
     else
 #endif
@@ -514,4 +533,60 @@ uint8_t LCD_ReadBytes(uint8_t cmd, uint8_t *out, uint8_t nread)
     __HAL_SPI_ENABLE(&s_hspi);
 
     return (status == HAL_OK) ? 1U : 0U;
+}
+
+/* Debug helper: stream len bytes as ONE DMA burst (CS low, DC high,
+ * framed by the caller). Same DMA2 Stream5 ch3 config as spi_hw_tx.
+ * Returns the armed NDTR and CR state via the out pointers for
+ * diagnosis (0 if the soft bus / bad args). */
+void LCD_DmaBurstBytes(const uint8_t *buf, uint32_t len,
+                       uint32_t *cr_out, uint32_t *ndtr_out)
+{
+    SPI_HW_Flush();
+    if (s_bus_hw == 0U || buf == NULL || len == 0U)
+    {
+        return;
+    }
+
+    spi_hw_enable();
+
+    DMA2_Stream5->CR = 0U;
+    while (DMA2_Stream5->CR & DMA_SxCR_EN) { }
+
+    DMA2_Stream5->PAR  = (uint32_t)&SPI1->DR;
+    DMA2_Stream5->M0AR = (uint32_t)buf;
+    DMA2_Stream5->NDTR = len;
+    DMA2_Stream5->CR = DMA_SxCR_CHSEL_0 | DMA_SxCR_CHSEL_1
+                     | DMA_SxCR_MINC
+                     | DMA_SxCR_DIR_0
+                     | DMA_SxCR_PL_1
+                     | DMA_SxCR_EN;
+
+    /* DWT cycle counter for burst duration (debug) */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0U;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    uint32_t t0 = DWT->CYCCNT;
+
+    SPI1->CR2 |= SPI_CR2_TXDMAEN;
+    while (DMA2_Stream5->CR & DMA_SxCR_EN) { }
+    SPI1->CR2 &= ~SPI_CR2_TXDMAEN;
+
+    while ((SPI1->SR & SPI_SR_BSY) != 0U) { }
+    uint32_t cycles = DWT->CYCCNT - t0;
+    uint32_t sr_after = SPI1->SR;
+    while ((SPI1->SR & SPI_SR_RXNE) != 0U) { (void)SPI1->DR; }
+    if ((SPI1->SR & SPI_SR_OVR) != 0U)
+    {
+        (void)SPI1->DR;
+        (void)SPI1->SR;
+    }
+
+    if (cr_out)   { *cr_out   = DMA2_Stream5->CR; }
+    if (ndtr_out) { *ndtr_out = DMA2_Stream5->NDTR; }
+
+    extern void LCD_DmaDebug(uint32_t len, uint32_t cycles, uint32_t sr,
+                             uint32_t cr, uint32_t ndtr);
+    LCD_DmaDebug(len, cycles, sr_after, DMA2_Stream5->CR,
+                 DMA2_Stream5->NDTR);
 }

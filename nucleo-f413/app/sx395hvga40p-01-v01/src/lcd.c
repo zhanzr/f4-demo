@@ -11,6 +11,7 @@
 */
 
 #include <string.h>
+#include <stdio.h>
 #include "board.h"
 #include "lcd.h"
 #include "interface.h"
@@ -228,6 +229,17 @@ static void lcd_write_pixel565(uint16_t c565)
     LCD_WriteDataFast((uint8_t)(((c565 >> 8) & 0xF8U) | ((c565 >> 13) & 0x07U)));
     LCD_WriteDataFast((uint8_t)(((c565 >> 3) & 0xFCU) | ((c565 >> 9) & 0x03U)));
     LCD_WriteDataFast((uint8_t)((c565 << 3) & 0xF8U));
+}
+
+
+/* DMA debug sink (called from interface.c after each DMA burst). */
+void LCD_DmaDebug(uint32_t len, uint32_t cycles, uint32_t sr,
+                  uint32_t cr, uint32_t ndtr)
+{
+    printf("[DMA] len=%lu cycles=%lu (%lu ns/byte) SR=%08lX CR=%08lX NDTR=%lu\r\n",
+           (unsigned long)len, (unsigned long)cycles,
+           (unsigned long)(cycles / (len ? len : 1U) / 100U),
+           (unsigned int)sr, (unsigned int)cr, (unsigned int)ndtr);
 }
 
 void DispColor(uint32_t color)

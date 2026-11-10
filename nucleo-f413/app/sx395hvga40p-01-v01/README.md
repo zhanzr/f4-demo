@@ -30,26 +30,17 @@ port uses the module's 4-wire SPI wiring instead).
 
 ## Wiring
 
-| LCD pin | MCU pin | Feature |
-| ------- | ------- | ------- |
-| SCL | PA5 | SPI clock (soft bit-bang / HW SPI1_SCK AF5) |
-| SDA | PA7 | SPI data out (MOSI) |
-| RST | **PF12** | Reset (high 50 ms -> low 200 ms -> high, vendor order) |
-| DC  | **PD15** | Command/data select (always GPIO) |
-| CS  | **PD14** | Chip select (always GPIO) |
-| BL  | **PE9** | Backlight - TIM1_CH1 **PWM 1 kHz, 15%** |
+| LCD pin | MCU pin | Feature | HW SPI1 role |
+| ------- | ------- | ------- | ------------ |
+| SCL | PA5 | SPI clock (soft bit-bang / HW) | SPI1_SCK (AF5, hardware) |
+| SDA/MOSI | PA7 | SPI data out | SPI1_MOSI (AF5, hardware) |
+| CS | **PD14** | Chip select (always GPIO) | stays GPIO software CS |
+| DC | **PD15** | Command/data select (always GPIO) | stays GPIO, driven per transfer |
+| RST | **PF12** | Reset (high 50 ms -> low 200 ms -> high, vendor order) | stays GPIO |
+| BL | **PE9** | Backlight - TIM1_CH1 **PWM 1 kHz, 30% HW pass / 15% soft pass** | stays GPIO |
+| MISO | PA6 | Panel SDO - wired for diagnostics; **reads are not supported in 4-line serial mode** (all reads return 0x00) | SPI1_MISO (AF5), unused |
 
-### HW SPI1 role of the shared pins
 
-| LCD pin | MCU pin | HW SPI1 (AF5) role |
-| ------- | ------- | ------------------ |
-| SCL | PA5 | **SPI1_SCK** (hardware) |
-| SDA | PA7 | **SPI1_MOSI** (hardware) |
-| RST | PF12 | Reset (high 50 ms -> low 200 ms -> high, vendor order) |
-| DC  | PD15 | stays GPIO - driven per byte/transfer |
-| CS  | PD14 | stays GPIO software CS |
-
-## What it does
 
 The demo loops forever. Each bus (soft, then HW) runs the **full-size
 pattern set** followed by a **NES-size pass** confined to a centered

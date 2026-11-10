@@ -40,6 +40,12 @@ void    LCD_UseSoftBus(void);   /* re-mux PA5/PA7 to GPIO, idle high      */
 void    LCD_UseHwBus(void);     /* re-mux PA5/PA6/PA7 to SPI1 AF5 + init */
 uint8_t LCD_ReadBytes(uint8_t cmd, uint8_t *out, uint8_t nread);
                                 /* HW-only read; 0=error, 1=success       */
+
+/* Debug: stream len bytes as ONE raw DMA burst (CS low, DC high are
+ * set inside; caller has done BlockWrite first). Reports the DMA CR
+ * and NDTR state after the burst via the out pointers. */
+void    LCD_DmaBurstBytes(const uint8_t *buf, uint32_t len,
+                          uint32_t *cr_out, uint32_t *ndtr_out);
 uint8_t LCD_BusIsHw(void);      /* 1 while the HW SPI1 bus is selected    */
 unsigned long LCD_HwSpiKHz(void); /* active SPI1 baud in kHz (info page)  */
 void    LCD_HwSetPrescaler(uint8_t presc); /* runtime SCK switch (sweep) */

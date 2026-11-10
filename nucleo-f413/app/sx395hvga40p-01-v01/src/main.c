@@ -422,20 +422,27 @@ int main(void)
     LCD_SetAsciiFont(&ASCII_Font16);
     paint_fps_band();
 
+    /* DMA isolation test pattern: pre-rendered black RGB666 rectangle */
+    static uint8_t s_rect[120 * 120 * 3];
+    for (uint32_t i = 0; i < sizeof s_rect; i += 3)
+    {
+        s_rect[i]     = 0x00U;
+        s_rect[i + 1] = 0x00U;
+        s_rect[i + 2] = 0x00U;
+    }
+
+
     /* -----------------------------------------------------------------
      * Dual-bus demo loop (st7365_md350 behavior): SOFT pass then
-     * HARDWARE pass, full-size patterns only (no NES window).
-     * Backlight = 50% PWM. LCD_Reinit() re-frames the panel each pass.
+     * HARDWARE pass, full-size patterns only. Backlight: 15% on the
+     * soft pass, 30% on the HW pass (shown on the banner).
      * ----------------------------------------------------------------- */
-    LCD_SetAsciiFont(&ASCII_Font16);
-    paint_fps_band();
-
     char l1[32] = "SX395 320x480";
     char l2[40];
 
     while (1)
     {
-        /* ---- SOFT pass: fastest bit-bang (pace 0 ~ 5-7 MHz), 15% BL ---- */
+        /* ---- SOFT pass: fastest bit-bang (pace 0), 15% backlight ---- */
         LCD_SoftSetPace(0U);
         LCD_UseSoftBus();
         Backlight_SetDuty(15U);
@@ -456,7 +463,7 @@ int main(void)
         LCD_Reinit();
         LCD_ResetWindow();
 
-        snprintf(l2, sizeof l2, "HW 50 MHz BL 30%%");
+        snprintf(l2, sizeof l2, "HW SPI1 50 MHz BL 30%%");
         printf("[LCD] phase: HARDWARE banner (%s)\r\n", l2);
         banner_page(l1, l2, LCD_BLACK, LCD_CYAN, 3000);
 
